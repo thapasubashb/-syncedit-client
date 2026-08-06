@@ -5,11 +5,11 @@
 html { scroll-behavior: smooth; }
 body { @apply font-sans antialiased; }
 
+/* Custom scrollbar */
 ::-webkit-scrollbar { @apply w-2; }
-::-webkit-scrollbar-track { @apply bg-gray-100; }
-::-webkit-scrollbar-thumb { @apply bg-gradient-to-b from-pink-400 to-purple-400 rounded-full; }
-
-/* Glass card utility */
-.glass {
-  @apply bg-white/30 backdrop-blur-md border border-white/30 shadow-xl;
+::-webkit-scrollbar-track { @apply bg-gray-800; }
+::-webkit-scrollbar-thumb { @apply bg-gradient-to-b from-cyan-400 to-pink-400 rounded-full; }
+/* Underline animation for navbar links */
+.group:hover .group-hover\:w-full {
+  width: 100%;
 }
