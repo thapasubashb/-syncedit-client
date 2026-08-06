@@ -2,49 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
-html {
-  scroll-behavior: smooth;
-}
-
-body {
-  @apply bg-[#0a0a1a] text-white antialiased;
+@layer base {
+  @font-face {
+    font-family: 'Founders Grotesk';
+    src: url('https://cdn.shopify.com/s/files/1/0834/1733/4050/files/founders-grotesk-regular.woff2?v=1697476987') format('woff2');
+    font-weight: 400;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Founders Grotesk';
+    src: url('https://cdn.shopify.com/s/files/1/0689/2342/4790/files/founders-grotesk-medium.woff2?v=1689707760') format('woff2');
+    font-weight: 500;
+    font-display: swap;
+  }
+  html { scroll-behavior: smooth; }
+  body { @apply font-body bg-shopify-off-white text-gray-800 antialiased; }
+  h1, h2, h3, h4, h5, h6 { @apply font-display; }
 }
 
 /* Custom scrollbar */
-::-webkit-scrollbar {
-  @apply w-2;
+::-webkit-scrollbar { @apply w-2; }
+::-webkit-scrollbar-track { @apply bg-shopify-off-white; }
+::-webkit-scrollbar-thumb { @apply bg-shopify-soft-purple rounded-full hover:bg-shopify-blue transition; }
+
+/* 3D floating shapes */
+.rotate-3d {
+  transform: rotateX(20deg) rotateY(30deg);
+  transform-style: preserve-3d;
+  perspective: 800px;
 }
 
-::-webkit-scrollbar-track {
-  @apply bg-gray-800 rounded;
-}
-
-::-webkit-scrollbar-thumb {
-  @apply bg-purple-600 rounded hover:bg-purple-700;
-}
-
-textarea::-webkit-scrollbar {
-  @apply w-2;
-}
-
-textarea::-webkit-scrollbar-track {
-  @apply bg-gray-800 rounded;
-}
-
-textarea::-webkit-scrollbar-thumb {
-  @apply bg-purple-600 rounded hover:bg-purple-700;
-}
-/* ... existing styles ... */
-
-.perspective-1000 {
-  perspective: 1000px;
-}
-
-.animate-spin-slow {
-  animation: spin 20s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.glass-card {
+  @apply bg-white/80 backdrop-blur-sm border border-white/30 shadow-xl;
 }
