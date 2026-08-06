@@ -2,36 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  @font-face {
-    font-family: 'Founders Grotesk';
-    src: url('https://cdn.shopify.com/s/files/1/0834/1733/4050/files/founders-grotesk-regular.woff2?v=1697476987') format('woff2');
-    font-weight: 400;
-    font-display: swap;
-  }
-  @font-face {
-    font-family: 'Founders Grotesk';
-    src: url('https://cdn.shopify.com/s/files/1/0689/2342/4790/files/founders-grotesk-medium.woff2?v=1689707760') format('woff2');
-    font-weight: 500;
-    font-display: swap;
-  }
-  html { scroll-behavior: smooth; }
-  body { @apply font-body bg-shopify-off-white text-gray-800 antialiased; }
-  h1, h2, h3, h4, h5, h6 { @apply font-display; }
-}
+html { scroll-behavior: smooth; }
+body { @apply font-sans antialiased; }
 
-/* Custom scrollbar */
 ::-webkit-scrollbar { @apply w-2; }
-::-webkit-scrollbar-track { @apply bg-shopify-off-white; }
-::-webkit-scrollbar-thumb { @apply bg-shopify-soft-purple rounded-full hover:bg-shopify-blue transition; }
+::-webkit-scrollbar-track { @apply bg-gray-100; }
+::-webkit-scrollbar-thumb { @apply bg-gradient-to-b from-pink-400 to-purple-400 rounded-full; }
 
-/* 3D floating shapes */
-.rotate-3d {
-  transform: rotateX(20deg) rotateY(30deg);
-  transform-style: preserve-3d;
-  perspective: 800px;
-}
-
-.glass-card {
-  @apply bg-white/80 backdrop-blur-sm border border-white/30 shadow-xl;
+/* Glass card utility */
+.glass {
+  @apply bg-white/30 backdrop-blur-md border border-white/30 shadow-xl;
 }

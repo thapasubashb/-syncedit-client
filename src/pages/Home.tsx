@@ -1,39 +1,27 @@
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-shopify-off-white">
+    <div className="min-h-screen bg-gradient-to-br from-pink-200 via-orange-100 to-yellow-200">
       <Navbar />
 
-      {/* HERO SECTION – Dark gradient + floating shapes */}
+      {/* Hero with vivid gradient */}
       <section className="relative min-h-screen flex items-center justify-center px-6 pt-20 overflow-hidden">
-        {/* Gradient background */}
-        <div className="absolute inset-0 -z-10 bg-hero-gradient animate-gradient" />
+        <div className="absolute inset-0 bg-gradient-to-br from-pink-500 via-purple-500 to-blue-500 opacity-90" />
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDM0djItaDJ2LTJoLTJ6bTAtNGgtMnYyaDJ2LTJ6bTQgMGgtMnYyaDJ2LTJ6bTAgNGgtMnYyaDJ2LTJ6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-20" />
 
-        {/* Floating 3D shapes */}
-        <div className="absolute top-1/4 left-10 w-72 h-72 bg-white/10 rounded-full blur-3xl animate-float" />
-        <div className="absolute bottom-1/4 right-10 w-96 h-96 bg-shopify-blue/20 rounded-full blur-3xl animate-float-delayed" />
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-64 h-64 bg-shopify-purple/10 rounded-full blur-3xl animate-pulse-soft" />
-
-        {/* Hero content */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="max-w-4xl mx-auto text-center relative z-10"
-        >
-          <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm border border-white/30 rounded-full px-5 py-2 text-sm font-medium text-white mb-8">
+        <div className="relative z-10 max-w-4xl mx-auto text-center text-white">
+          <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm border border-white/30 rounded-full px-5 py-2 text-sm font-medium mb-8">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
             </span>
-            CRDT-powered · Real-time · Zero conflicts
+            CRDT-powered · Real‑time · Zero conflicts
           </div>
 
-          <h1 className="text-5xl md:text-7xl font-bold text-white leading-tight mb-6 tracking-tight">
+          <h1 className="text-5xl md:text-7xl font-bold leading-tight mb-6 drop-shadow-lg">
             SyncEdit
           </h1>
 
@@ -43,45 +31,30 @@ export default function Home() {
           </p>
 
           <div className="flex flex-wrap justify-center gap-4">
-            <Link
-              to="/editor"
-              className="px-8 py-3 bg-white text-shopify-purple hover:bg-shopify-off-white font-semibold rounded-full shadow-lg hover:shadow-xl transition-all duration-300"
-            >
+            <Link to="/editor" className="px-8 py-3 bg-white text-purple-700 font-semibold rounded-full shadow-xl hover:shadow-2xl transition hover:scale-105">
               Try the Editor ↓
             </Link>
-            <Link
-              to="/features"
-              className="px-8 py-3 bg-white/20 backdrop-blur-sm border border-white/30 hover:bg-white/30 text-white font-semibold rounded-full transition-all duration-300"
-            >
+            <Link to="/features" className="px-8 py-3 bg-white/20 backdrop-blur-sm border border-white/30 hover:bg-white/30 text-white font-semibold rounded-full transition">
               Learn More
             </Link>
           </div>
-        </motion.div>
+        </div>
       </section>
 
-      {/* FEATURES SECTION – Shopify-style cards */}
+      {/* Features – bright cards */}
       <section className="max-w-7xl mx-auto px-6 py-20">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-shopify-purple">Why SyncEdit?</h2>
-          <p className="text-gray-600 mt-3 text-lg">Built for the modern web – fast, resilient, and beautiful.</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-800">Why SyncEdit?</h2>
+          <p className="text-gray-600 mt-2 text-lg">Fast, resilient, and beautiful.</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {features.map((feature, idx) => (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, y: 40 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: idx * 0.1, duration: 0.6 }}
-              className="glass-card rounded-2xl p-8 hover:shadow-2xl transition-all duration-300 border border-shopify-lavender/30 hover:border-shopify-blue/50 group"
-            >
-              <div className="text-5xl mb-4">{feature.icon}</div>
-              <h3 className="text-xl font-bold text-shopify-purple group-hover:text-shopify-blue transition">
-                {feature.title}
-              </h3>
-              <p className="text-gray-600 text-sm mt-3 leading-relaxed">{feature.description}</p>
-            </motion.div>
+          {features.map((f, idx) => (
+            <div key={idx} className="glass rounded-2xl p-8 hover:shadow-2xl transition hover:scale-105">
+              <div className="text-5xl mb-4">{f.icon}</div>
+              <h3 className="text-xl font-bold text-gray-800">{f.title}</h3>
+              <p className="text-gray-600 text-sm mt-2">{f.description}</p>
+            </div>
           ))}
         </div>
       </section>
@@ -92,8 +65,8 @@ export default function Home() {
 }
 
 const features = [
-  { icon: '🧠', title: 'CRDT Engine', description: 'RGA algorithm ensures automatic conflict resolution – no lost edits, ever.' },
-  { icon: '⚡', title: 'Sub‑100ms Latency', description: 'Optimized binary protocol and efficient diffing keep operations instant.' },
-  { icon: '📦', title: '85% Smaller Payload', description: 'Custom binary encoding slashes bandwidth usage compared to JSON.' },
-  { icon: '🌐', title: 'Offline-Ready', description: 'Edits are stored locally and sync seamlessly when you reconnect.' },
+  { icon: '🧠', title: 'CRDT Engine', description: 'Automatic conflict resolution – no lost edits.' },
+  { icon: '⚡', title: 'Sub‑100ms', description: 'Optimized binary protocol keeps operations instant.' },
+  { icon: '📦', title: '85% Smaller Payload', description: 'Custom binary encoding saves bandwidth.' },
+  { icon: '🌐', title: 'Offline-Ready', description: 'Edits sync when you reconnect.' },
 ];

@@ -1,45 +1,23 @@
-import { motion } from 'framer-motion';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 export default function Features() {
   return (
-    <div className="min-h-screen bg-shopify-off-white">
+    <div className="min-h-screen bg-gradient-to-br from-pink-200 via-orange-100 to-yellow-200">
       <Navbar />
-      <section className="pt-32 pb-20 px-6 max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-16"
-        >
-          <h1 className="text-4xl md:text-5xl font-bold text-shopify-purple mb-4">
-            Everything You Need for Real-Time Collaboration
-          </h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            SyncEdit combines cutting-edge CRDT technology with a beautiful interface
-            to deliver the best collaborative editing experience.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {detailedFeatures.map((f, idx) => (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: idx * 0.1, duration: 0.5 }}
-              className="glass-card rounded-2xl p-8 hover:shadow-2xl transition-all border border-shopify-lavender/30 hover:border-shopify-blue/50"
-            >
+      <section className="pt-32 pb-20 px-6 max-w-5xl mx-auto">
+        <h1 className="text-4xl font-bold text-center text-gray-800 mb-12">All Features</h1>
+        <div className="space-y-6">
+          {details.map((d, i) => (
+            <div key={i} className="glass rounded-xl p-6 border border-white/30 hover:shadow-xl transition">
               <div className="flex items-start gap-4">
-                <div className="text-4xl">{f.icon}</div>
+                <span className="text-3xl">{d.icon}</span>
                 <div>
-                  <h3 className="text-xl font-bold text-shopify-purple mb-2">{f.title}</h3>
-                  <p className="text-gray-600 leading-relaxed">{f.description}</p>
+                  <h3 className="text-xl font-semibold text-gray-800">{d.title}</h3>
+                  <p className="text-gray-600">{d.desc}</p>
                 </div>
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
       </section>
@@ -48,11 +26,11 @@ export default function Features() {
   );
 }
 
-const detailedFeatures = [
-  { icon: '⚡', title: 'Blazing Fast Performance', description: 'Sub-100ms operation latency even with 50+ concurrent users.' },
-  { icon: '🔀', title: 'Automatic Conflict Resolution', description: 'The RGA CRDT algorithm handles all merge conflicts automatically.' },
-  { icon: '📡', title: 'Bandwidth Efficient', description: '85% smaller payloads compared to JSON-based protocols.' },
-  { icon: '💾', title: 'Offline-First Architecture', description: 'Edits are stored locally and sync automatically when you reconnect.' },
-  { icon: '🔄', title: 'Real-Time Sync', description: 'Changes appear instantly on all connected devices with WebSocket.' },
-  { icon: '📊', title: 'Rich Analytics', description: 'Track document history, view edit patterns, and understand collaboration dynamics.' },
+const details = [
+  { icon: '⚡', title: 'Blazing Fast', desc: 'Sub-100ms latency with 50+ users.' },
+  { icon: '🔀', title: 'Auto Merge', desc: 'No conflicts – RGA CRDT handles everything.' },
+  { icon: '📡', title: 'Bandwidth Efficient', desc: '85% smaller than JSON.' },
+  { icon: '💾', title: 'Offline-First', desc: 'Edits store locally and sync later.' },
+  { icon: '🔄', title: 'Real-Time Sync', desc: 'WebSocket updates instantly.' },
+  { icon: '📊', title: 'Analytics', desc: 'Track history and edit patterns.' },
 ];
