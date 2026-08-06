@@ -1,4 +1,3 @@
-// src/crdt/RGA.ts
 import { compareIds, keyOf, ROOT_ID } from './types';
 import type { Vertex, VertexId } from './types';
 
@@ -7,17 +6,18 @@ export class RGA {
   private headId: VertexId = ROOT_ID;
   private clientId: number;
   private lamportClock: number;
+  private readonly sentinelParent: VertexId = { clientId: 0, lamportTime: -1 };
 
   constructor(clientId: number) {
     this.clientId = clientId;
     this.lamportClock = 0;
     
-    // Create a dummy root vertex
+    // Root vertex – parentId is a sentinel (not itself) to avoid cycles
     const root: Vertex = {
       id: this.headId,
       char: '',
       isTombstone: false,
-      parentId: ROOT_ID
+      parentId: this.sentinelParent
     };
     this.vertices.set(keyOf(this.headId), root);
   }
@@ -50,15 +50,20 @@ export class RGA {
 
   public toText(): string {
     return this.getOrderedVertices()
-      .filter(v => !v.isTombstone)
+      .filter(v => !v.isTombstone && !this.isRoot(v.id))
       .map(v => v.char)
       .join('');
+  }
+
+  private isRoot(id: VertexId): boolean {
+    return id.clientId === this.headId.clientId && id.lamportTime === this.headId.lamportTime;
   }
 
   public getOrderedVertices(): Vertex[] {
     const result: Vertex[] = [];
     const childrenMap = new Map<string, Vertex[]>();
     
+    // Build parent → children map
     for (const [_, vertex] of this.vertices) {
       const parentKey = keyOf(vertex.parentId);
       if (!childrenMap.has(parentKey)) {
@@ -67,6 +72,7 @@ export class RGA {
       childrenMap.get(parentKey)!.push(vertex);
     }
 
+    // Sort children by ID for deterministic order
     for (const [_, children] of childrenMap) {
       children.sort((a, b) => compareIds(a.id, b.id));
     }
@@ -74,7 +80,9 @@ export class RGA {
     const traverse = (parentId: VertexId) => {
       const parentKey = keyOf(parentId);
       const parent = this.vertices.get(parentKey);
-      if (parent) result.push(parent);
+      if (parent) {
+        result.push(parent);
+      }
       const children = childrenMap.get(parentKey) || [];
       for (const child of children) {
         traverse(child.id);
@@ -89,6 +97,7 @@ export class RGA {
     const ordered = this.getOrderedVertices();
     let visibleIndex = 0;
     for (const v of ordered) {
+      if (this.isRoot(v.id)) continue;      // skip the sentinel root
       if (!v.isTombstone) {
         if (visibleIndex === index) return v;
         visibleIndex++;
@@ -108,6 +117,7 @@ export class RGA {
       } else {
         const local = this.vertices.get(key)!;
         local.isTombstone = local.isTombstone || vertex.isTombstone;
+        // char and parentId remain unchanged
       }
     }
   }
