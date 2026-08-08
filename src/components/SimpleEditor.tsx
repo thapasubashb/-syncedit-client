@@ -144,15 +144,34 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
 
   return (
     <div className="min-h-[450px]">
+      
+
+<div className="flex items-center justify-between mb-3 px-2">
+  <div className="flex items-center gap-2">
+    <span className="text-sm font-medium text-slate-700">📄 Document</span>
+    <span className="text-xs text-slate-500 bg-white/50 px-2 py-1 rounded-full">
+      {text.length} characters
+    </span>
+  </div>
+  <div className="flex items-center gap-2">
+    <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
+      ● Live
+    </span>
+    <span className="text-xs text-slate-500 bg-white/50 px-2 py-1 rounded-full">
+      WebSocket: {isConnected ? '✅ Connected' : '❌ Disconnected'}
+    </span>
+  </div>
+</div>
+
       <textarea
-        ref={textareaRef}
-        defaultValue={text}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        className="w-full min-h-[450px] p-5 font-mono text-base border-0 outline-none resize-none bg-transparent text-gray-800"
-        placeholder="Start typing..."
-        style={{ lineHeight: '1.8', resize: 'none' }}
-      />
+  ref={textareaRef}
+  defaultValue={text}
+  onChange={handleChange}
+  onKeyDown={handleKeyDown}
+  className="w-full min-h-[450px] p-5 font-mono text-base border-0 outline-none resize-none bg-white/50 backdrop-blur-sm rounded-lg text-gray-800 placeholder:text-gray-400"
+  placeholder="Start typing..."
+  style={{ lineHeight: '1.8', resize: 'none' }}
+/>
       <div className="text-xs text-gray-500 mt-2 flex justify-between">
         <span>Characters: {text.length}</span>
         <span>WebSocket: {isConnected ? '✅ Connected' : '❌ Disconnected'}</span>
