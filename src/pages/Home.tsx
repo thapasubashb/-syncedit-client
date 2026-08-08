@@ -32,7 +32,7 @@ export default function Home() {
           <div className="flex flex-wrap justify-center gap-4">
             <Link 
               to="/editor" 
-              className="px-8 py-3.5 bg-white text-blue-700 font-bold rounded-full shadow-2xl hover:shadow-3xl transition-all hover:-translate-y-1 hover:scale-105"
+              className="px-8 py-3.5 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-400 hover:to-purple-400 text-white font-bold rounded-full shadow-2xl hover:shadow-3xl transition-all hover:-translate-y-1 hover:scale-105"
             >
               Try the Editor ↓
             </Link>
