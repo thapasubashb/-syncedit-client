@@ -2,17 +2,81 @@
 import React, { useCallback, useRef, useEffect } from 'react';
 import { useCRDT } from '../hooks/useCRDT';
 import { ROOT_ID } from '../crdt/types';
+import { useWebSocket } from '../context/WebSocketContext';
+import type { VertexId, Vertex } from '../crdt/types';
 
 interface EditorProps {
   clientId: number;
 }
 
 const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
-  const { text, verticesCount, tombstonesCount, insertChar, deleteChar, getVertexAt, getHead } = useCRDT(clientId);
+  const { rga, text, insertChar, deleteChar, getVertexAt, getHead, updateText } = useCRDT(clientId);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isInternalUpdate = useRef(false);
+  
+  // 🔗 WebSocket
+  const { sendMessage, onMessage, isConnected } = useWebSocket();
 
-  // Update textarea when CRDT changes
+  // --- Helper: Send operation to WebSocket ---
+  const sendOperation = useCallback((opType: 'insert' | 'delete', data: any) => {
+    if (isConnected) {
+      sendMessage({
+        type: 'operation',
+        operation: {
+          type: opType,
+          ...data
+        }
+      });
+    }
+  }, [isConnected, sendMessage]);
+
+  // --- Remote operation handler ---
+  useEffect(() => {
+    const handleRemoteOperation = (message: any) => {
+      const { operation } = message;
+      if (!operation) return;
+
+      // Apply remote operation to local CRDT
+      if (operation.type === 'insert') {
+        const { vertex } = operation;
+        if (vertex) {
+          // Use insertWithId to preserve remote ID
+          rga.insertWithId(vertex.char, vertex.parentId, vertex.id);
+          updateText(); // refresh UI
+          console.log('📥 Remote insert applied');
+        }
+      } else if (operation.type === 'delete') {
+        const { vertexId } = operation;
+        if (vertexId) {
+          rga.delete(vertexId);
+          updateText(); // refresh UI
+          console.log('📥 Remote delete applied');
+        }
+      }
+    };
+
+    onMessage('operation', handleRemoteOperation);
+    // Cleanup: remove listener if needed (optional)
+  }, [onMessage, rga, updateText]);
+
+  // --- Local insert (overrides the original insertChar) ---
+  const localInsertChar = useCallback((char: string, parentId: VertexId) => {
+    // 1. Insert locally
+    const vertex = insertChar(char, parentId);
+    // 2. Send to WebSocket
+    sendOperation('insert', { vertex });
+    return vertex;
+  }, [insertChar, sendOperation]);
+
+  // --- Local delete (overrides original deleteChar) ---
+  const localDeleteChar = useCallback((vertexId: VertexId) => {
+    // 1. Delete locally
+    deleteChar(vertexId);
+    // 2. Send to WebSocket
+    sendOperation('delete', { vertexId });
+  }, [deleteChar, sendOperation]);
+
+  // --- Textarea update on CRDT change ---
   useEffect(() => {
     if (textareaRef.current && !isInternalUpdate.current) {
       const cursorPos = textareaRef.current.selectionStart;
@@ -36,17 +100,31 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
       if (char) {
         const vertex = pos === 0 ? getHead() : getVertexAt(pos - 1);
         const parentId = vertex ? vertex.id : ROOT_ID;
-        insertChar(char, parentId);
+        localInsertChar(char, parentId);
+        // Move cursor forward
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = pos + 1;
+            textareaRef.current.selectionEnd = pos + 1;
+          }
+        }, 0);
       }
     } else if (newText.length < oldText.length) {
       // Deletion
       const pos = cursorPos;
       const vertex = getVertexAt(pos);
       if (vertex) {
-        deleteChar(vertex.id);
+        localDeleteChar(vertex.id);
+        // Keep cursor at same position
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = pos;
+            textareaRef.current.selectionEnd = pos;
+          }
+        }, 0);
       }
     }
-  }, [text, insertChar, deleteChar, getVertexAt, getHead]);
+  }, [text, localInsertChar, localDeleteChar, getVertexAt, getHead]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
@@ -54,8 +132,7 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
       const pos = e.currentTarget.selectionStart;
       const vertex = pos === 0 ? getHead() : getVertexAt(pos - 1);
       const parentId = vertex ? vertex.id : ROOT_ID;
-      insertChar('\n', parentId);
-      
+      localInsertChar('\n', parentId);
       setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.selectionStart = pos + 1;
@@ -63,63 +140,22 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         }
       }, 0);
     }
-  }, [insertChar, getVertexAt, getHead]);
+  }, [localInsertChar, getVertexAt, getHead]);
 
   return (
-    <div className="bg-white rounded-2xl shadow-xl border border-gray-100/50 overflow-hidden transition-all hover:shadow-2xl">
-      {/* Toolbar */}
-      <div className="bg-gradient-to-r from-gray-50 to-gray-100/50 border-b border-gray-200/50 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-3 text-sm text-gray-600">
-          <span className="font-medium text-gray-700">📄 Editor</span>
-          <span className="text-gray-300">|</span>
-          <span className="flex items-center gap-1">
-            Characters: <span className="font-mono font-semibold text-blue-600">{text.length}</span>
-          </span>
-          <span className="text-gray-300 hidden sm:inline">|</span>
-          <span className="hidden sm:flex items-center gap-1 text-xs text-gray-500">
-            Vertices: <span className="font-mono">{verticesCount}</span>
-            <span className="text-gray-300 mx-1">·</span>
-            Tombstones: <span className="font-mono text-orange-500">{tombstonesCount}</span>
-          </span>
-        </div>
-        <div className="text-xs text-gray-400">
-          Client <span className="font-mono text-gray-600 bg-gray-200/50 px-2 py-0.5 rounded">{clientId}</span>
-        </div>
-      </div>
-
-      {/* Text Area */}
+    <div className="min-h-[450px]">
       <textarea
         ref={textareaRef}
         defaultValue={text}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        className="w-full min-h-[450px] p-5 font-mono text-base border-0 outline-none resize-none focus:ring-0 bg-white text-gray-800"
+        className="w-full min-h-[450px] p-5 font-mono text-base border-0 outline-none resize-none bg-transparent text-gray-800"
         placeholder="Start typing..."
-        style={{ 
-          lineHeight: '1.8',
-          resize: 'none',
-        }}
+        style={{ lineHeight: '1.8', resize: 'none' }}
       />
-
-      {/* Status Bar */}
-      <div className="bg-gradient-to-r from-gray-50 to-gray-100/50 border-t border-gray-200/50 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-            Connected
-          </span>
-          <span className="text-gray-300 hidden sm:inline">|</span>
-          <span className="hidden sm:inline">CRDT: RGA</span>
-          <span className="text-gray-300 hidden sm:inline">|</span>
-          <span className="hidden sm:inline">Lamport Clock: <span className="font-mono">{useCRDT(clientId).rga.nextLamport() - 1}</span></span>
-        </div>
-        <div className="flex items-center gap-1 text-gray-400">
-          <kbd className="px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-600 text-xs font-mono shadow-sm">Ctrl+Z</kbd>
-          <span className="mx-0.5">Undo</span>
-          <span className="text-gray-300 mx-1">·</span>
-          <kbd className="px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-600 text-xs font-mono shadow-sm">Ctrl+Shift+Z</kbd>
-          <span className="ml-0.5">Redo</span>
-        </div>
+      <div className="text-xs text-gray-500 mt-2 flex justify-between">
+        <span>Characters: {text.length}</span>
+        <span>WebSocket: {isConnected ? '✅ Connected' : '❌ Disconnected'}</span>
       </div>
     </div>
   );

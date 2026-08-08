@@ -2,6 +2,26 @@ import { compareIds, keyOf, ROOT_ID } from './types';
 import type { Vertex, VertexId } from './types';
 
 export class RGA {
+  // Inside RGA class, add this method:
+
+public insertWithId(char: string, parentId: VertexId, id: VertexId): Vertex {
+  // Check if vertex with this ID already exists
+  const existing = this.vertices.get(keyOf(id));
+  if (existing) {
+    // If it exists, ensure it's not a tombstone and char matches
+    // We'll just return existing (no change)
+    return existing;
+  }
+  const vertex: Vertex = {
+    id,
+    char,
+    isTombstone: false,
+    parentId
+  };
+  this.vertices.set(keyOf(id), vertex);
+  return vertex;
+}
+
   private vertices: Map<string, Vertex> = new Map();
   private headId: VertexId = ROOT_ID;
   private clientId: number;
