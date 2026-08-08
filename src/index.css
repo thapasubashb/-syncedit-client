@@ -5,11 +5,12 @@
 html { scroll-behavior: smooth; }
 body { @apply font-sans antialiased; }
 
-/* Custom scrollbar */
-::-webkit-scrollbar { @apply w-2; }
-::-webkit-scrollbar-track { @apply bg-gray-800; }
-::-webkit-scrollbar-thumb { @apply bg-gradient-to-b from-cyan-400 to-pink-400 rounded-full; }
-/* Underline animation for navbar links */
-.group:hover .group-hover\:w-full {
-  width: 100%;
+/* Exact Sky Gradient from your image */
+.bg-sky-gradient {
+  background: linear-gradient(180deg, #60A5D2 0%, #9BB9E5 25%, #CDB4DB 50%, #F0B3C3 75%, #F9A786 100%);
 }
+
+/* Scrollbar styling */
+::-webkit-scrollbar { @apply w-2; }
+::-webkit-scrollbar-track { @apply bg-[#CDB4DB]/30; }
+::-webkit-scrollbar-thumb { @apply bg-gradient-to-b from-[#60A5D2] to-[#F9A786] rounded-full; }
