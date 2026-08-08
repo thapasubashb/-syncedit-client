@@ -1,30 +1,45 @@
+// src/components/Footer.tsx
 export default function Footer() {
   return (
-    <div className="w-full flex flex-col items-center justify-center pb-12 px-6 pt-8">
-      {/* Tagline - 15 Words exactly */}
-      <p className="text-slate-700 text-lg font-medium mb-8 bg-white/30 backdrop-blur-md inline-block px-6 py-3 rounded-full shadow-lg border border-white/40 transition hover:bg-white/40">
-        Next-gen real-time collaboration engine built for zero-conflict teamwork, seamless speed, and resilient offline sync.
-      </p>
-
-      {/* Social Links */}
-      <div className="flex flex-wrap justify-center gap-4 mb-6">
-        <a href="https://github.com/thapasubashb" target="_blank" rel="noopener noreferrer" 
-           className="flex items-center gap-2 bg-white/30 backdrop-blur-md px-5 py-3 rounded-full hover:bg-white/60 hover:-translate-y-1 transition shadow-lg border border-white/40 text-slate-800 font-medium">
-          <span className="text-xl">🐙</span> GitHub
-        </a>
-        <a href="https://www.linkedin.com/in/B-Subash" target="_blank" rel="noopener noreferrer" 
-           className="flex items-center gap-2 bg-white/30 backdrop-blur-md px-5 py-3 rounded-full hover:bg-white/60 hover:-translate-y-1 transition shadow-lg border border-white/40 text-slate-800 font-medium">
-          <span className="text-xl">🔗</span> B . Subash
-        </a>
-        <a href="https://www.instagram.com/Subash._.10" target="_blank" rel="noopener noreferrer" 
-           className="flex items-center gap-2 bg-white/30 backdrop-blur-md px-5 py-3 rounded-full hover:bg-white/60 hover:-translate-y-1 transition shadow-lg border border-white/40 text-slate-800 font-medium">
-          <span className="text-xl">📷</span> Subash._.10
-        </a>
+    <div className="w-full max-w-6xl mx-auto flex flex-col md:flex-row items-start justify-between gap-8 px-6 py-12 bg-transparent border-t border-white/20 mt-auto">
+      {/* Left Side: Tagline & extra info */}
+      <div className="flex-1">
+        <p className="text-slate-950 text-base leading-relaxed max-w-sm">
+          Next-gen real-time collaboration engine built for zero-conflict teamwork, seamless speed, and resilient offline sync.
+        </p>
+        <p className="text-slate-800  text-sm mt-2">
+          Built with ❤️ using React, TypeScript, and CRDTs.
+        </p>
       </div>
 
-      <p className="text-slate-600 text-sm font-medium bg-white/20 backdrop-blur-sm inline-block px-6 py-2 rounded-full border border-white/30 shadow-sm">
-        © 2026 SyncEdit – Built with ❤️
-      </p>
+      {/* Right Side: Social links – vertical stack */}
+      <div className="flex flex-col items-end gap-2">
+        <a 
+          href="https://github.com/thapasubashb" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-slate-700 hover:text-blue-600 transition flex items-center gap-2 font-medium"
+        >
+          <span className="text-xl">🐙</span> GitHub - thapasubashb
+        </a>
+        <a 
+          href="https://www.linkedin.com/in/B-Subash" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-slate-700 hover:text-blue-600 transition flex items-center gap-2 font-medium"
+        >
+          <span className="text-xl">🔗</span> LinkedIn - B SUBASH
+        </a>
+        <a 
+          href="https://www.instagram.com/Subash._.10" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-slate-700 hover:text-pink-500 transition flex items-center gap-2 font-medium"
+        >
+          <span className="text-xl">📷</span> Instagram - Subash._.10 
+        </a>
+        <p className="text-xs text-slate-950 mt-2">© 2026 SyncEdit by SUBASH </p>
+      </div>
     </div>
   );
 }
