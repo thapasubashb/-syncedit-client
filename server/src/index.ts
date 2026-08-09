@@ -1,8 +1,10 @@
+// server/src/index.ts
 import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import http from 'http';
 import { IncomingMessage } from 'http';
+import { decodeBinaryMessage, MessageType } from './protocol/decoder';
 
 const app = express();
 const port = 8080;
@@ -11,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'SyncEdit server is running' });
+  res.json({ status: 'ok', message: 'Canvas_Sync server running' });
 });
 
 const server = http.createServer(app);
@@ -31,78 +33,106 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
   const clientId = nextClientId++;
   console.log(`🔵 Client ${clientId} connected`);
 
-  // Store client
   clients.set(ws, { ws, clientId, documentId: null });
 
-  // Send welcome message with client ID
   ws.send(JSON.stringify({
     type: 'welcome',
     clientId,
-    message: 'Connected to SyncEdit server'
+    message: 'Connected to Canvas_Sync server'
   }));
 
   ws.on('message', (data: Buffer) => {
     try {
-      const message = JSON.parse(data.toString());
-      console.log(`📨 Client ${clientId}:`, message.type);
+      // Check if binary: first byte not a valid JSON start char ( { )
+      const isBinary = data.length > 0 && data[0] !== 123; // 123 is '{'
+      
+      if (isBinary) {
+        // Decode binary
+        const msg = decodeBinaryMessage(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+        console.log(`📨 Binary from ${msg.clientId}:`, msg);
 
-      switch (message.type) {
-        case 'join':
-          // Join a document room
-          const documentId = message.documentId || 'default';
-          const client = clients.get(ws);
-          if (client) {
-            client.documentId = documentId;
-            
-            if (!rooms.has(documentId)) {
-              rooms.set(documentId, new Set());
-            }
-            rooms.get(documentId)!.add(ws);
-            console.log(`📄 Client ${clientId} joined room: ${documentId}`);
-          }
-          break;
+        const client = clients.get(ws);
+        if (!client || !client.documentId) {
+          console.warn('Client not in a room, dropping binary message');
+          return;
+        }
+        const room = rooms.get(client.documentId);
+        if (!room) {
+          console.warn('No room for document:', client.documentId);
+          return;
+        }
 
-        case 'operation':
-          // Broadcast operation to all clients in the same room
-          const clientInfo = clients.get(ws);
-          if (clientInfo && clientInfo.documentId) {
-            const room = rooms.get(clientInfo.documentId);
-            if (room) {
-              const payload = JSON.stringify({
-                type: 'operation',
-                clientId: clientInfo.clientId,
-                operation: message.operation
-              });
-              
-              room.forEach((clientWs) => {
-                if (clientWs !== ws && clientWs.readyState === WebSocket.OPEN) {
-                  clientWs.send(payload);
-                }
-              });
-            }
+        // Broadcast to all others in the room
+        let broadcastCount = 0;
+        room.forEach((clientWs) => {
+          if (clientWs !== ws && clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(data);
+            broadcastCount++;
           }
-          break;
+        });
+        console.log(`📤 Broadcast binary to ${broadcastCount} clients in room ${client.documentId}`);
+      } else {
+        // JSON message
+        const message = JSON.parse(data.toString());
+        console.log(`📨 JSON from ${clientId}:`, message.type);
 
-        case 'cursor':
-          // Broadcast cursor position
-          const cursorClient = clients.get(ws);
-          if (cursorClient && cursorClient.documentId) {
-            const room = rooms.get(cursorClient.documentId);
-            if (room) {
-              const payload = JSON.stringify({
-                type: 'cursor',
-                clientId: cursorClient.clientId,
-                position: message.position
-              });
-              
-              room.forEach((clientWs) => {
-                if (clientWs !== ws && clientWs.readyState === WebSocket.OPEN) {
-                  clientWs.send(payload);
-                }
-              });
+        switch (message.type) {
+          case 'join': {
+            const documentId = message.documentId || 'default';
+            const client = clients.get(ws);
+            if (client) {
+              client.documentId = documentId;
+              if (!rooms.has(documentId)) {
+                rooms.set(documentId, new Set());
+              }
+              rooms.get(documentId)!.add(ws);
+              console.log(`📄 Client ${clientId} joined room: ${documentId}`);
+              ws.send(JSON.stringify({ type: 'joined', documentId, clientId }));
             }
+            break;
           }
-          break;
+          case 'operation': {
+            // Fallback JSON operation forwarding
+            const client = clients.get(ws);
+            if (client && client.documentId) {
+              const room = rooms.get(client.documentId);
+              if (room) {
+                const payload = JSON.stringify({
+                  type: 'operation',
+                  clientId: client.clientId,
+                  operation: message.operation
+                });
+                room.forEach((clientWs) => {
+                  if (clientWs !== ws && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(payload);
+                  }
+                });
+              }
+            }
+            break;
+          }
+          case 'cursor': {
+            const client = clients.get(ws);
+            if (client && client.documentId) {
+              const room = rooms.get(client.documentId);
+              if (room) {
+                const payload = JSON.stringify({
+                  type: 'cursor',
+                  clientId: client.clientId,
+                  position: message.position
+                });
+                room.forEach((clientWs) => {
+                  if (clientWs !== ws && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(payload);
+                  }
+                });
+              }
+            }
+            break;
+          }
+          default:
+            console.log('Unknown JSON message type:', message.type);
+        }
       }
     } catch (error) {
       console.error('Error processing message:', error);
@@ -126,6 +156,6 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 });
 
 server.listen(port, () => {
-  console.log(`🚀 SyncEdit server running on http://localhost:${port}`);
+  console.log(`🚀 Canvas_Sync server running on http://localhost:${port}`);
   console.log(`📡 WebSocket server running on ws://localhost:${port}`);
 });

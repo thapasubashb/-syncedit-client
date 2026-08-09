@@ -1,27 +1,8 @@
+// src/crdt/RGA.ts
 import { compareIds, keyOf, ROOT_ID } from './types';
 import type { Vertex, VertexId } from './types';
 
 export class RGA {
-  // Inside RGA class, add this method:
-
-public insertWithId(char: string, parentId: VertexId, id: VertexId): Vertex {
-  // Check if vertex with this ID already exists
-  const existing = this.vertices.get(keyOf(id));
-  if (existing) {
-    // If it exists, ensure it's not a tombstone and char matches
-    // We'll just return existing (no change)
-    return existing;
-  }
-  const vertex: Vertex = {
-    id,
-    char,
-    isTombstone: false,
-    parentId
-  };
-  this.vertices.set(keyOf(id), vertex);
-  return vertex;
-}
-
   private vertices: Map<string, Vertex> = new Map();
   private headId: VertexId = ROOT_ID;
   private clientId: number;
@@ -31,8 +12,8 @@ public insertWithId(char: string, parentId: VertexId, id: VertexId): Vertex {
   constructor(clientId: number) {
     this.clientId = clientId;
     this.lamportClock = 0;
-    
-    // Root vertex – parentId is a sentinel (not itself) to avoid cycles
+
+    // Create the root vertex (sentinel)
     const root: Vertex = {
       id: this.headId,
       char: '',
@@ -46,11 +27,39 @@ public insertWithId(char: string, parentId: VertexId, id: VertexId): Vertex {
     return ++this.lamportClock;
   }
 
+  // Synchronize local clock with a received timestamp
+  public updateClock(ts: number): void {
+    if (ts > this.lamportClock) {
+      this.lamportClock = ts;
+    }
+  }
+
+  // Local insertion – generates a new Lamport timestamp
   public insert(char: string, parentId: VertexId): Vertex {
     const id: VertexId = {
       clientId: this.clientId,
       lamportTime: this.nextLamport()
     };
+    const vertex: Vertex = {
+      id,
+      char,
+      isTombstone: false,
+      parentId
+    };
+    this.vertices.set(keyOf(id), vertex);
+    return vertex;
+  }
+
+  // Remote insertion – uses an existing ID (from another client)
+  // Also updates the local clock
+  public insertWithId(char: string, parentId: VertexId, id: VertexId): Vertex {
+    // Update clock to max(current, id.lamportTime)
+    this.updateClock(id.lamportTime);
+    // If a vertex with this ID already exists, return it (idempotent)
+    const existing = this.vertices.get(keyOf(id));
+    if (existing) {
+      return existing;
+    }
     const vertex: Vertex = {
       id,
       char,
@@ -82,7 +91,7 @@ public insertWithId(char: string, parentId: VertexId, id: VertexId): Vertex {
   public getOrderedVertices(): Vertex[] {
     const result: Vertex[] = [];
     const childrenMap = new Map<string, Vertex[]>();
-    
+
     // Build parent → children map
     for (const [_, vertex] of this.vertices) {
       const parentKey = keyOf(vertex.parentId);
@@ -92,7 +101,7 @@ public insertWithId(char: string, parentId: VertexId, id: VertexId): Vertex {
       childrenMap.get(parentKey)!.push(vertex);
     }
 
-    // Sort children by ID for deterministic order
+    // Sort children by ID (Lamport time then clientId)
     for (const [_, children] of childrenMap) {
       children.sort((a, b) => compareIds(a.id, b.id));
     }
@@ -117,7 +126,7 @@ public insertWithId(char: string, parentId: VertexId, id: VertexId): Vertex {
     const ordered = this.getOrderedVertices();
     let visibleIndex = 0;
     for (const v of ordered) {
-      if (this.isRoot(v.id)) continue;      // skip the sentinel root
+      if (this.isRoot(v.id)) continue;
       if (!v.isTombstone) {
         if (visibleIndex === index) return v;
         visibleIndex++;

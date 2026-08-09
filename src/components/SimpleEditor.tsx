@@ -1,9 +1,11 @@
 // src/components/SimpleEditor.tsx
-import React, { useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useRef, useEffect, useState } from 'react';
 import { useCRDT } from '../hooks/useCRDT';
 import { ROOT_ID } from '../crdt/types';
 import { useWebSocket } from '../context/WebSocketContext';
-import type { VertexId, Vertex } from '../crdt/types';
+import { OperationQueue } from '../crdt/OperationQueue';
+import { MessageType, BinaryInsert, BinaryDelete, BinaryCursor } from '../network';
+import type { VertexId } from '../crdt/types';
 
 interface EditorProps {
   clientId: number;
@@ -13,70 +15,161 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
   const { rga, text, insertChar, deleteChar, getVertexAt, getHead, updateText } = useCRDT(clientId);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isInternalUpdate = useRef(false);
-  
-  // 🔗 WebSocket
-  const { sendMessage, onMessage, isConnected } = useWebSocket();
+  const [remoteCursors, setRemoteCursors] = useState<Map<number, number>>(new Map());
+  const [opQueue] = useState(() => new OperationQueue());
 
-  // --- Helper: Send operation to WebSocket ---
-  const sendOperation = useCallback((opType: 'insert' | 'delete', data: any) => {
-    if (isConnected) {
-      sendMessage({
-        type: 'operation',
-        operation: {
-          type: opType,
-          ...data
-        }
-      });
-    }
-  }, [isConnected, sendMessage]);
+  const { clientId: wsClientId, sendBinary, onMessage, isConnected } = useWebSocket();
+  const effectiveClientId = wsClientId || clientId;
 
-  // --- Remote operation handler ---
+  // Log when clientId updates
   useEffect(() => {
-    const handleRemoteOperation = (message: any) => {
-      const { operation } = message;
-      if (!operation) return;
+    console.log('🆔 WebSocket clientId updated:', wsClientId);
+  }, [wsClientId]);
 
-      // Apply remote operation to local CRDT
-      if (operation.type === 'insert') {
-        const { vertex } = operation;
-        if (vertex) {
-          // Use insertWithId to preserve remote ID
-          rga.insertWithId(vertex.char, vertex.parentId, vertex.id);
-          updateText(); // refresh UI
-          console.log('📥 Remote insert applied');
+  // Send cursor position as binary
+  const sendCursorPosition = useCallback(() => {
+    if (textareaRef.current && isConnected && wsClientId !== null) {
+      const pos = textareaRef.current.selectionStart;
+      const cursorMsg: BinaryCursor = {
+        type: MessageType.CURSOR,
+        clientId: wsClientId,
+        lamportTime: rga.nextLamport(),
+        position: pos,
+      };
+      console.log('🟡 Sending cursor:', cursorMsg);
+      sendBinary(cursorMsg);
+    } else {
+      console.warn('⛔ Cannot send cursor: wsClientId=', wsClientId, 'isConnected=', isConnected);
+    }
+  }, [sendBinary, isConnected, wsClientId, rga]);
+
+  // Handle binary messages
+  useEffect(() => {
+    const handleBinaryMessage = (msg: any) => {
+      console.log('📥 Binary handler received:', msg);
+
+      // Skip our own messages
+      if (msg.clientId === wsClientId) {
+        console.log('⏭️ Skipping own message');
+        return;
+      }
+
+      if (msg.type === MessageType.INSERT) {
+        const insertMsg = msg as BinaryInsert;
+        console.log('📥 Processing INSERT from client', insertMsg.clientId);
+
+        const parentId = {
+          clientId: insertMsg.parentClientId,
+          lamportTime: insertMsg.parentLamport,
+        };
+        const vertexId = {
+          clientId: insertMsg.vertexClientId,
+          lamportTime: insertMsg.vertexLamport,
+        };
+
+        const queuedOp = {
+          type: 'insert' as const,
+          lamportTime: insertMsg.lamportTime,
+          clientId: insertMsg.clientId,
+          vertexId: vertexId,
+          char: insertMsg.char,
+          parentId: parentId,
+        };
+        opQueue.enqueue(queuedOp);
+        const readyOps = opQueue.process();
+        for (const op of readyOps) {
+          if (op.type === 'insert' && op.vertexId && op.char && op.parentId) {
+            rga.updateClock(op.lamportTime);
+            rga.insertWithId(op.char, op.parentId, op.vertexId);
+          }
         }
-      } else if (operation.type === 'delete') {
-        const { vertexId } = operation;
-        if (vertexId) {
-          rga.delete(vertexId);
-          updateText(); // refresh UI
-          console.log('📥 Remote delete applied');
+        if (readyOps.length > 0) {
+          updateText();
+          console.log(`📥 Applied ${readyOps.length} remote inserts`);
         }
+      } else if (msg.type === MessageType.DELETE) {
+        const deleteMsg = msg as BinaryDelete;
+        console.log('📥 Processing DELETE from client', deleteMsg.clientId);
+
+        const vertexId = {
+          clientId: deleteMsg.vertexClientId,
+          lamportTime: deleteMsg.vertexLamport,
+        };
+
+        const queuedOp = {
+          type: 'delete' as const,
+          lamportTime: deleteMsg.lamportTime,
+          clientId: deleteMsg.clientId,
+          vertexId: vertexId,
+        };
+        opQueue.enqueue(queuedOp);
+        const readyOps = opQueue.process();
+        for (const op of readyOps) {
+          if (op.type === 'delete' && op.vertexId) {
+            rga.updateClock(op.lamportTime);
+            rga.delete(op.vertexId);
+          }
+        }
+        if (readyOps.length > 0) {
+          updateText();
+          console.log(`📥 Applied ${readyOps.length} remote deletes`);
+        }
+      } else if (msg.type === MessageType.CURSOR) {
+        const cursorMsg = msg as BinaryCursor;
+        console.log('📥 Processing CURSOR from client', cursorMsg.clientId, 'position:', cursorMsg.position);
+        setRemoteCursors(prev => {
+          const newMap = new Map(prev);
+          newMap.set(cursorMsg.clientId, cursorMsg.position);
+          return newMap;
+        });
       }
     };
 
-    onMessage('operation', handleRemoteOperation);
-    // Cleanup: remove listener if needed (optional)
-  }, [onMessage, rga, updateText]);
+    // Register handler for all binary messages
+    onMessage('all', handleBinaryMessage);
+    console.log('✅ Binary message handler registered');
+  }, [onMessage, rga, updateText, wsClientId, opQueue]);
 
-  // --- Local insert (overrides the original insertChar) ---
+  // Send insert operation as binary
   const localInsertChar = useCallback((char: string, parentId: VertexId) => {
-    // 1. Insert locally
     const vertex = insertChar(char, parentId);
-    // 2. Send to WebSocket
-    sendOperation('insert', { vertex });
+    if (wsClientId !== null) {
+      const binaryMsg: BinaryInsert = {
+        type: MessageType.INSERT,
+        clientId: wsClientId,
+        lamportTime: vertex.id.lamportTime,
+        parentClientId: parentId.clientId,
+        parentLamport: parentId.lamportTime,
+        vertexClientId: vertex.id.clientId,
+        vertexLamport: vertex.id.lamportTime,
+        char: char,
+      };
+      console.log('🔵 Sending INSERT binary:', binaryMsg);
+      sendBinary(binaryMsg);
+    } else {
+      console.warn('⛔ Cannot send INSERT: wsClientId is null');
+    }
     return vertex;
-  }, [insertChar, sendOperation]);
+  }, [insertChar, sendBinary, wsClientId]);
 
-  // --- Local delete (overrides original deleteChar) ---
+  // Send delete operation as binary
   const localDeleteChar = useCallback((vertexId: VertexId) => {
-    // 1. Delete locally
     deleteChar(vertexId);
-    // 2. Send to WebSocket
-    sendOperation('delete', { vertexId });
-  }, [deleteChar, sendOperation]);
+    if (wsClientId !== null) {
+      const binaryMsg: BinaryDelete = {
+        type: MessageType.DELETE,
+        clientId: wsClientId,
+        lamportTime: rga.nextLamport(),
+        vertexClientId: vertexId.clientId,
+        vertexLamport: vertexId.lamportTime,
+      };
+      console.log('🔴 Sending DELETE binary:', binaryMsg);
+      sendBinary(binaryMsg);
+    } else {
+      console.warn('⛔ Cannot send DELETE: wsClientId is null');
+    }
+  }, [deleteChar, sendBinary, wsClientId, rga]);
 
-  // --- Textarea update on CRDT change ---
   useEffect(() => {
     if (textareaRef.current && !isInternalUpdate.current) {
       const cursorPos = textareaRef.current.selectionStart;
@@ -94,14 +187,12 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
     const cursorPos = e.target.selectionStart;
 
     if (newText.length > oldText.length) {
-      // Insertion
       const pos = cursorPos - 1;
       const char = newText[pos];
       if (char) {
         const vertex = pos === 0 ? getHead() : getVertexAt(pos - 1);
         const parentId = vertex ? vertex.id : ROOT_ID;
         localInsertChar(char, parentId);
-        // Move cursor forward
         setTimeout(() => {
           if (textareaRef.current) {
             textareaRef.current.selectionStart = pos + 1;
@@ -110,12 +201,10 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         }, 0);
       }
     } else if (newText.length < oldText.length) {
-      // Deletion
       const pos = cursorPos;
       const vertex = getVertexAt(pos);
       if (vertex) {
         localDeleteChar(vertex.id);
-        // Keep cursor at same position
         setTimeout(() => {
           if (textareaRef.current) {
             textareaRef.current.selectionStart = pos;
@@ -143,39 +232,49 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
   }, [localInsertChar, getVertexAt, getHead]);
 
   return (
-    <div className="min-h-[450px]">
-      
-
-<div className="flex items-center justify-between mb-3 px-2">
-  <div className="flex items-center gap-2">
-    <span className="text-sm font-medium text-slate-700">📄 Document</span>
-    <span className="text-xs text-slate-500 bg-white/50 px-2 py-1 rounded-full">
-      {text.length} characters
-    </span>
-  </div>
-  <div className="flex items-center gap-2">
-    <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
-      ● Live
-    </span>
-    <span className="text-xs text-slate-500 bg-white/50 px-2 py-1 rounded-full">
-      WebSocket: {isConnected ? '✅ Connected' : '❌ Disconnected'}
-    </span>
-  </div>
-</div>
+    <div className="w-full">
+      <div className="flex items-center justify-between mb-3 px-2 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-slate-700">📄 Document</span>
+          <span className="text-xs text-slate-500 bg-white/50 backdrop-blur-sm px-2 py-1 rounded-full">
+            {text.length} characters
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-xs px-2 py-1 rounded-full ${
+            isConnected 
+              ? 'text-green-600 bg-green-100/80' 
+              : 'text-red-600 bg-red-100/80'
+          } backdrop-blur-sm`}>
+            {isConnected ? '● Live' : '● Offline'}
+          </span>
+          <span className="text-xs text-slate-500 bg-white/50 backdrop-blur-sm px-2 py-1 rounded-full">
+            👥 {remoteCursors.size + 1} online
+          </span>
+        </div>
+      </div>
 
       <textarea
-  ref={textareaRef}
-  defaultValue={text}
-  onChange={handleChange}
-  onKeyDown={handleKeyDown}
-  className="w-full min-h-[450px] p-5 font-mono text-base border-0 outline-none resize-none bg-white/50 backdrop-blur-sm rounded-lg text-gray-800 placeholder:text-gray-400"
-  placeholder="Start typing..."
-  style={{ lineHeight: '1.8', resize: 'none' }}
-/>
-      <div className="text-xs text-gray-500 mt-2 flex justify-between">
-        <span>Characters: {text.length}</span>
-        <span>WebSocket: {isConnected ? '✅ Connected' : '❌ Disconnected'}</span>
-      </div>
+        ref={textareaRef}
+        defaultValue={text}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onSelect={sendCursorPosition}
+        onClick={sendCursorPosition}
+        className="w-full min-h-[450px] p-5 font-mono text-base border-0 outline-none resize-none bg-white/60 backdrop-blur-sm rounded-xl text-gray-800 placeholder:text-gray-400 shadow-inner"
+        placeholder="Start typing..."
+        style={{ lineHeight: '1.8', resize: 'none' }}
+      />
+
+      {remoteCursors.size > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+          {Array.from(remoteCursors.entries()).map(([id, pos]) => (
+            <span key={id} className="bg-white/50 backdrop-blur-sm px-2 py-1 rounded-full border border-white/20">
+              👤 User {id}: position {pos}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

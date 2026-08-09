@@ -1,5 +1,5 @@
 {
-  "name": "syncedit-server",
+  "name": "Canvas_Sync",
   "version": "0.1.0",
   "description": "SyncEdit WebSocket server",
   "main": "dist/index.js",

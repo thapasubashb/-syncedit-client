@@ -1,12 +1,14 @@
 // src/context/WebSocketContext.tsx
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { wsService } from '../services/websocket';
+import { BinaryMessage, MessageType } from '../network';
 
 interface WebSocketContextType {
   clientId: number | null;
   isConnected: boolean;
   sendMessage: (data: any) => void;
-  onMessage: (type: string, handler: (data: any) => void) => void;
+  sendBinary: (msg: BinaryMessage) => void;
+  onMessage: (type: MessageType | 'all', handler: (data: BinaryMessage) => void) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -38,12 +40,20 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     wsService.send(data);
   };
 
-  const onMessage = (type: string, handler: (data: any) => void) => {
+  const sendBinary = (msg: BinaryMessage) => {
+    if (wsService) {
+      wsService.sendBinary(msg);
+    } else {
+      console.warn('wsService not available');
+    }
+  };
+
+  const onMessage = (type: MessageType | 'all', handler: (data: BinaryMessage) => void) => {
     wsService.on(type, handler);
   };
 
   return (
-    <WebSocketContext.Provider value={{ clientId, isConnected, sendMessage, onMessage }}>
+    <WebSocketContext.Provider value={{ clientId, isConnected, sendMessage, sendBinary, onMessage }}>
       {children}
     </WebSocketContext.Provider>
   );
