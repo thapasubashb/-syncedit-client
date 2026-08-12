@@ -6,6 +6,7 @@ import { useWebSocket } from '../context/WebSocketContext';
 import { OperationQueue } from '../crdt/OperationQueue';
 import { HistoryManager } from '../crdt/HistoryManager';
 import { MessageType, BinaryInsert, BinaryDelete, BinaryCursor } from '../network';
+import { offlineStorage } from '../services/OfflineStorage';
 import type { VertexId, Vertex } from '../crdt/types';
 
 interface EditorProps {
@@ -19,16 +20,16 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
   const [remoteCursors, setRemoteCursors] = useState<Map<number, number>>(new Map());
   const [opQueue] = useState(() => new OperationQueue());
   const [history] = useState(() => new HistoryManager());
+  const [documentId] = useState('default');
 
   const { clientId: wsClientId, sendBinary, onMessage, isConnected } = useWebSocket();
-  const effectiveClientId = wsClientId || clientId;
 
   // --- History helpers ---
   const pushHistory = (entry: { type: 'insert' | 'delete'; vertex?: Vertex; vertexId?: VertexId }) => {
     history.push(entry);
   };
 
-  // --- Undo / Redo functions ---
+  // --- Undo / Redo ---
   const performUndo = useCallback(() => {
     if (!history.canUndo()) return;
     const entry = history.popUndo();
@@ -36,14 +37,11 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
 
     history.withRecordingOff(() => {
       if (entry.type === 'insert' && entry.vertex) {
-        // Undo insert → delete the vertex
         localDeleteChar(entry.vertex.id);
       } else if (entry.type === 'delete' && entry.vertex) {
-        // Undo delete → re-insert the vertex with its original ID
         localInsertWithId(entry.vertex.char, entry.vertex.parentId, entry.vertex.id);
       }
     });
-    // Push inverse operation to redo stack
     if (entry.type === 'insert' && entry.vertex) {
       history.pushRedo({ type: 'delete', vertex: entry.vertex });
     } else if (entry.type === 'delete' && entry.vertex) {
@@ -63,7 +61,6 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         localDeleteChar(entry.vertex.id);
       }
     });
-    // Push back to undo stack
     history.push(entry);
   }, [history]);
 
@@ -83,6 +80,54 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [performUndo, performRedo]);
+
+  // --- Offline sync on reconnect ---
+  useEffect(() => {
+    if (isConnected && wsClientId !== null) {
+      const syncOfflineOps = async () => {
+        const unsynced = await offlineStorage.getUnsyncedOperations(documentId);
+        if (unsynced.length === 0) return;
+        console.log(`📤 Syncing ${unsynced.length} offline operations...`);
+        const idsToMark: string[] = [];
+        for (const item of unsynced) {
+          const op = item.operation;
+          if (op.type === MessageType.INSERT) {
+            const binaryMsg: BinaryInsert = {
+              type: MessageType.INSERT,
+              clientId: op.clientId,
+              lamportTime: op.lamportTime,
+              parentClientId: op.parentClientId,
+              parentLamport: op.parentLamport,
+              vertexClientId: op.vertexClientId,
+              vertexLamport: op.vertexLamport,
+              char: op.char,
+            };
+            sendBinary(binaryMsg);
+          } else if (op.type === MessageType.DELETE) {
+            const binaryMsg: BinaryDelete = {
+              type: MessageType.DELETE,
+              clientId: op.clientId,
+              lamportTime: op.lamportTime,
+              vertexClientId: op.vertexClientId,
+              vertexLamport: op.vertexLamport,
+            };
+            sendBinary(binaryMsg);
+          }
+          idsToMark.push(item.id);
+        }
+        await offlineStorage.markSynced(idsToMark);
+        console.log(`✅ Synced ${idsToMark.length} offline operations.`);
+      };
+      syncOfflineOps();
+    }
+  }, [isConnected, wsClientId, documentId, sendBinary]);
+
+  // --- Save operation offline if not connected ---
+  const saveOperationOffline = useCallback(async (operation: any) => {
+    if (!isConnected) {
+      await offlineStorage.saveOperation(operation, documentId);
+    }
+  }, [isConnected, documentId]);
 
   // --- Broadcast / sync methods ---
   const sendCursorPosition = useCallback(() => {
@@ -168,7 +213,7 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
     onMessage('all', handleBinaryMessage);
   }, [onMessage, rga, updateText, wsClientId, opQueue]);
 
-  // --- Local operations with history ---
+  // --- Local operations with history and offline ---
   const localInsertChar = useCallback((char: string, parentId: VertexId) => {
     const vertex = insertChar(char, parentId);
     pushHistory({ type: 'insert', vertex });
@@ -183,16 +228,31 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         vertexLamport: vertex.id.lamportTime,
         char: char,
       };
-      sendBinary(binaryMsg);
+      if (isConnected) {
+        sendBinary(binaryMsg);
+      } else {
+        saveOperationOffline(binaryMsg);
+      }
+    } else {
+      const binaryMsg: BinaryInsert = {
+        type: MessageType.INSERT,
+        clientId: clientId,
+        lamportTime: vertex.id.lamportTime,
+        parentClientId: parentId.clientId,
+        parentLamport: parentId.lamportTime,
+        vertexClientId: vertex.id.clientId,
+        vertexLamport: vertex.id.lamportTime,
+        char: char,
+      };
+      saveOperationOffline(binaryMsg);
     }
     return vertex;
-  }, [insertChar, sendBinary, wsClientId, pushHistory]);
+  }, [insertChar, sendBinary, wsClientId, isConnected, saveOperationOffline, clientId]);
 
   const localDeleteChar = useCallback((vertexId: VertexId) => {
-    // Get vertex data before deletion for history
-    const vertex = rga.getVertexAt(rga.getOrderedVertices().findIndex(v => 
-      v.id.clientId === vertexId.clientId && v.id.lamportTime === vertexId.lamportTime
-    ));
+    // Find vertex for history
+    const ordered = rga.getOrderedVertices();
+    const vertex = ordered.find(v => v.id.clientId === vertexId.clientId && v.id.lamportTime === vertexId.lamportTime);
     if (!vertex) return;
     pushHistory({ type: 'delete', vertex });
     deleteChar(vertexId);
@@ -204,12 +264,24 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         vertexClientId: vertexId.clientId,
         vertexLamport: vertexId.lamportTime,
       };
-      sendBinary(binaryMsg);
+      if (isConnected) {
+        sendBinary(binaryMsg);
+      } else {
+        saveOperationOffline(binaryMsg);
+      }
+    } else {
+      const binaryMsg: BinaryDelete = {
+        type: MessageType.DELETE,
+        clientId: clientId,
+        lamportTime: rga.nextLamport(),
+        vertexClientId: vertexId.clientId,
+        vertexLamport: vertexId.lamportTime,
+      };
+      saveOperationOffline(binaryMsg);
     }
-  }, [deleteChar, sendBinary, wsClientId, rga, pushHistory]);
+  }, [deleteChar, sendBinary, wsClientId, isConnected, saveOperationOffline, clientId, rga]);
 
   const localInsertWithId = useCallback((char: string, parentId: VertexId, id: VertexId) => {
-    // Used for redo / undo of delete
     const vertex = rga.insertWithId(char, parentId, id);
     if (wsClientId !== null) {
       const binaryMsg: BinaryInsert = {
@@ -222,11 +294,27 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         vertexLamport: id.lamportTime,
         char: char,
       };
-      sendBinary(binaryMsg);
+      if (isConnected) {
+        sendBinary(binaryMsg);
+      } else {
+        saveOperationOffline(binaryMsg);
+      }
+    } else {
+      const binaryMsg: BinaryInsert = {
+        type: MessageType.INSERT,
+        clientId: clientId,
+        lamportTime: id.lamportTime,
+        parentClientId: parentId.clientId,
+        parentLamport: parentId.lamportTime,
+        vertexClientId: id.clientId,
+        vertexLamport: id.lamportTime,
+        char: char,
+      };
+      saveOperationOffline(binaryMsg);
     }
     updateText();
     return vertex;
-  }, [rga, sendBinary, wsClientId, updateText]);
+  }, [rga, sendBinary, wsClientId, isConnected, saveOperationOffline, clientId, updateText]);
 
   // --- Textarea sync ---
   useEffect(() => {
