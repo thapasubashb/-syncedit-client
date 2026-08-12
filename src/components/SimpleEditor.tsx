@@ -6,8 +6,9 @@ import { useWebSocket } from '../context/WebSocketContext';
 import { OperationQueue } from '../crdt/OperationQueue';
 import { HistoryManager } from '../crdt/HistoryManager';
 import { MessageType, BinaryInsert, BinaryDelete, BinaryCursor } from '../network';
-import { offlineStorage } from '../services/offlineStorage';
+import { offlineStorage } from '../services/OfflineStorage';
 import type { VertexId, Vertex } from '../crdt/types';
+
 
 interface EditorProps {
   clientId: number;

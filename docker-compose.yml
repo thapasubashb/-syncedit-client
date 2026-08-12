@@ -1,0 +1,29 @@
+
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: canvassync-backend
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+      - ./server/prisma:/app/prisma
+      - ./server/dev.db:/app/dev.db   # SQLite persistence
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=file:/app/dev.db
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: canvassync-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

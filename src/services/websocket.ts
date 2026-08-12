@@ -15,14 +15,14 @@ class WebSocketService {
   connect(documentId: string = 'default'): Promise<number> {
     return new Promise((resolve, reject) => {
       this.documentId = documentId;
-      this.ws = new WebSocket('ws://localhost:8080');
+      const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080';
+      this.ws = new WebSocket(WS_URL);
       this.ws.binaryType = 'arraybuffer';
 
       this.ws.onopen = () => {
         console.log('🔗 WebSocket connected (binary)');
         this.isConnected = true;
         this.ws?.send(JSON.stringify({ type: 'join', documentId: this.documentId }));
-        // Flush any buffered messages now that we have a connection
         this.flushBuffer();
       };
 
@@ -31,7 +31,6 @@ class WebSocketService {
           try {
             const msg = decodeBinaryMessage(event.data);
             console.log('📨 Received binary:', msg);
-            // Store in buffer if no handlers yet
             if (this.handlers.size === 0) {
               console.log('📦 Buffering message (no handlers yet)');
               this.messageBuffer.push(msg);
@@ -42,7 +41,7 @@ class WebSocketService {
             console.error('Binary decode error:', e);
           }
         } else {
-          // Text message (welcome, etc.)
+          // Text message (welcome, snapshot, etc.)
           try {
             const data = JSON.parse(event.data);
             if (data.type === 'welcome') {
@@ -67,10 +66,8 @@ class WebSocketService {
   }
 
   private dispatchMessage(msg: BinaryMessage): void {
-    // Trigger handlers for this specific type
     const typeHandlers = this.handlers.get(msg.type) || [];
     typeHandlers.forEach(h => h(msg));
-    // Also trigger 'all' handlers
     const allHandlers = this.handlers.get('all') || [];
     allHandlers.forEach(h => h(msg));
   }
@@ -104,7 +101,6 @@ class WebSocketService {
       this.handlers.set(type, []);
     }
     this.handlers.get(type)!.push(handler);
-    // If we already have a connection and buffered messages, flush them
     if (this.isConnected && this.messageBuffer.length > 0) {
       this.flushBuffer();
     }

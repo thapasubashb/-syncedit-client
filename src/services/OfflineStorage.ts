@@ -1,88 +1,60 @@
-// src/services/OfflineStorage.ts
-import Dexie, { Table } from 'dexie';
+// src/services/offlineStorage.ts
+import type { BinaryMessage } from '../network';
 
-interface StoredOperation {
-  id: string; // `${clientId}:${lamportTime}`
-  documentId: string;
-  clientId: number;
-  lamportTime: number;
-  operation: any; // the full operation object
-  timestamp: number;
-  synced: boolean;
-}
+export class OfflineStorage {
+  private dbName = 'CanvasSyncDB';
+  private storeName = 'operations';
+  private db: IDBDatabase | null = null;
 
-class OfflineDatabase extends Dexie {
-  operations!: Table<StoredOperation, string>;
+  async init(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.dbName, 1);
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(this.storeName)) {
+          db.createObjectStore(this.storeName, { autoIncrement: true });
+        }
+      };
+      request.onsuccess = (event) => {
+        this.db = (event.target as IDBOpenDBRequest).result;
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
 
-  constructor() {
-    super('CanvasSyncDB');
-    this.version(1).stores({
-      operations: 'id, documentId, synced, timestamp'
+  async saveOperation(op: BinaryMessage): Promise<void> {
+    if (!this.db) await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(this.storeName, 'readwrite');
+      const store = tx.objectStore(this.storeName);
+      const request = store.add(op);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async getPendingOperations(): Promise<BinaryMessage[]> {
+    if (!this.db) await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(this.storeName, 'readonly');
+      const store = tx.objectStore(this.storeName);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async clearPendingOperations(): Promise<void> {
+    if (!this.db) await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(this.storeName, 'readwrite');
+      const store = tx.objectStore(this.storeName);
+      const request = store.clear();
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
     });
   }
 }
 
-const db = new OfflineDatabase();
-
-export const offlineStorage = {
-  // Save an operation locally
-  async saveOperation(operation: any, documentId: string): Promise<void> {
-    const id = `${operation.clientId}:${operation.lamportTime}`;
-    await db.operations.put({
-      id,
-      documentId,
-      clientId: operation.clientId,
-      lamportTime: operation.lamportTime,
-      operation,
-      timestamp: Date.now(),
-      synced: false,
-    });
-    console.log(`💾 Saved offline operation: ${id}`);
-  },
-
-  // Get all unsynced operations for a document
-  async getUnsyncedOperations(documentId: string): Promise<StoredOperation[]> {
-    return db.operations
-      .where('documentId')
-      .equals(documentId)
-      .and(item => !item.synced)
-      .toArray();
-  },
-
-  // Mark operations as synced
-  async markSynced(ids: string[]): Promise<void> {
-    await db.operations.bulkUpdate(ids.map(id => ({ key: id, changes: { synced: true } })));
-  },
-
-  // Delete synced operations (after confirmation)
-  async deleteSyncedOperations(documentId: string): Promise<void> {
-    await db.operations
-      .where('documentId')
-      .equals(documentId)
-      .and(item => item.synced)
-      .delete();
-  },
-
-  // Clear all operations for a document (e.g., on full reconnection)
-  async clearAllOperations(documentId: string): Promise<void> {
-    await db.operations.where('documentId').equals(documentId).delete();
-  },
-
-  // Check if there are any unsynced operations for a document
-  async hasUnsynced(documentId: string): Promise<boolean> {
-    const count = await db.operations
-      .where('documentId')
-      .equals(documentId)
-      .and(item => !item.synced)
-      .count();
-    return count > 0;
-  },
-
-  // Get all stored operations (for debugging)
-  async getAllOperations(documentId?: string): Promise<StoredOperation[]> {
-    if (documentId) {
-      return db.operations.where('documentId').equals(documentId).toArray();
-    }
-    return db.operations.toArray();
-  },
-};
+export const offlineStorage = new OfflineStorage();

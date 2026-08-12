@@ -19,11 +19,30 @@ export class ShapeCRDT {
     return ++this.lamportClock;
   }
 
+  // Local insertion – generates a new Lamport timestamp
   public insertShape(shapeData: ShapeData, parentId: ShapeVertexId): ShapeVertex {
     const id: ShapeVertexId = {
       clientId: this.clientId,
       lamportTime: this.nextLamport()
     };
+    const vertex: ShapeVertex = {
+      id,
+      shapeData,
+      isTombstone: false,
+      parentId,
+      layer: 0,
+    };
+    this.vertices.set(this.keyOf(id), vertex);
+    return vertex;
+  }
+
+  // Remote insertion – uses an existing ID (from another client)
+  public insertShapeWithId(shapeData: ShapeData, parentId: ShapeVertexId, id: ShapeVertexId): ShapeVertex {
+    // Check if a vertex with this ID already exists (idempotent)
+    const existing = this.vertices.get(this.keyOf(id));
+    if (existing) {
+      return existing;
+    }
     const vertex: ShapeVertex = {
       id,
       shapeData,
@@ -50,8 +69,6 @@ export class ShapeCRDT {
   }
 
   public getOrderedShapes(): ShapeVertex[] {
-    // Simple order: just return all non-tombstone vertices
-    // For more complex layer ordering, we'd sort by layer
     const result: ShapeVertex[] = [];
     for (const [_, vertex] of this.vertices) {
       if (!vertex.isTombstone) {
@@ -68,8 +85,7 @@ export class ShapeCRDT {
       } else {
         const local = this.vertices.get(key)!;
         local.isTombstone = local.isTombstone || vertex.isTombstone;
-        // For shape properties, we could use LWW (Last-Write-Wins) with Lamport
-        // Simple approach: if remote has newer lamport, override
+        // Last‑write‑wins: newer Lamport timestamp overrides shape data
         if (vertex.id.lamportTime > local.id.lamportTime) {
           local.shapeData = { ...vertex.shapeData };
         }

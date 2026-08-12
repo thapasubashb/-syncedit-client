@@ -20,7 +20,6 @@ export function decodeBinaryMessage(buffer: ArrayBuffer): BinaryMessage {
       const parentLamport = dv.getUint32(p); p += 4;
       const vertexClientId = dv.getUint32(p); p += 4;
       const vertexLamport = dv.getUint32(p); p += 4;
-      // Read char bytes
       const charBytes = new Uint8Array(payload.buffer, payload.byteOffset + p, payload.byteLength - p);
       const char = new TextDecoder().decode(charBytes);
       return {
@@ -62,6 +61,46 @@ export function decodeBinaryMessage(buffer: ArrayBuffer): BinaryMessage {
         clientId,
         lamportTime,
       };
+    case MessageType.SHAPE_INSERT: {
+      const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+      const jsonLength = dv.getUint32(0);
+      const jsonBytes = new Uint8Array(payload.buffer, payload.byteOffset + 4, jsonLength);
+      const json = new TextDecoder().decode(jsonBytes);
+      const shapeVertex = JSON.parse(json);
+      return {
+        type: MessageType.SHAPE_INSERT,
+        clientId,
+        lamportTime,
+        shapeVertex,
+      };
+    }
+    case MessageType.SHAPE_UPDATE: {
+      const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+      const jsonLength = dv.getUint32(0);
+      const jsonBytes = new Uint8Array(payload.buffer, payload.byteOffset + 4, jsonLength);
+      const json = new TextDecoder().decode(jsonBytes);
+      const { vertexId, shapeData } = JSON.parse(json);
+      return {
+        type: MessageType.SHAPE_UPDATE,
+        clientId,
+        lamportTime,
+        vertexId,
+        shapeData,
+      };
+    }
+    case MessageType.SHAPE_DELETE: {
+      const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+      const jsonLength = dv.getUint32(0);
+      const jsonBytes = new Uint8Array(payload.buffer, payload.byteOffset + 4, jsonLength);
+      const json = new TextDecoder().decode(jsonBytes);
+      const vertexId = JSON.parse(json);
+      return {
+        type: MessageType.SHAPE_DELETE,
+        clientId,
+        lamportTime,
+        vertexId,
+      };
+    }
     default:
       throw new Error(`Unknown message type: ${type}`);
   }

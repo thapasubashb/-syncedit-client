@@ -7,6 +7,7 @@ export function encodeBinaryMessage(msg: BinaryMessage): ArrayBuffer {
 
   switch (msg.type) {
     case MessageType.INSERT: {
+      // ... existing INSERT encoding
       const charBytes = new TextEncoder().encode(msg.char);
       const byteLength = charBytes.length > 0 ? charBytes.length : 1;
       const buf = new ArrayBuffer(4 + 4 + 4 + 4 + byteLength);
@@ -24,6 +25,7 @@ export function encodeBinaryMessage(msg: BinaryMessage): ArrayBuffer {
       break;
     }
     case MessageType.DELETE: {
+      // ... existing DELETE encoding
       const buf = new ArrayBuffer(4 + 4);
       const view = new DataView(buf);
       view.setUint32(0, msg.vertexClientId);
@@ -45,13 +47,52 @@ export function encodeBinaryMessage(msg: BinaryMessage): ArrayBuffer {
       payloadLength = 0;
       break;
     }
-    default: {
-      // Exhaustiveness check – this should never happen
-      const _exhaustiveCheck: never = msg;
-      throw new Error(`Unknown message type: ${(msg as any).type}`);
+    case MessageType.SHAPE_INSERT: {
+      // Encode shape vertex as JSON string
+      const json = JSON.stringify(msg.shapeVertex);
+      const jsonBytes = new TextEncoder().encode(json);
+      const buf = new ArrayBuffer(4 + jsonBytes.length); // length prefix (4 bytes) + data
+      const view = new DataView(buf);
+      view.setUint32(0, jsonBytes.length);
+      for (let i = 0; i < jsonBytes.length; i++) {
+        view.setUint8(4 + i, jsonBytes[i]);
+      }
+      payload = new Uint8Array(buf);
+      payloadLength = buf.byteLength;
+      break;
     }
+    case MessageType.SHAPE_UPDATE: {
+      const data = { vertexId: msg.vertexId, shapeData: msg.shapeData };
+      const json = JSON.stringify(data);
+      const jsonBytes = new TextEncoder().encode(json);
+      const buf = new ArrayBuffer(4 + jsonBytes.length);
+      const view = new DataView(buf);
+      view.setUint32(0, jsonBytes.length);
+      for (let i = 0; i < jsonBytes.length; i++) {
+        view.setUint8(4 + i, jsonBytes[i]);
+      }
+      payload = new Uint8Array(buf);
+      payloadLength = buf.byteLength;
+      break;
+    }
+    case MessageType.SHAPE_DELETE: {
+      const json = JSON.stringify(msg.vertexId);
+      const jsonBytes = new TextEncoder().encode(json);
+      const buf = new ArrayBuffer(4 + jsonBytes.length);
+      const view = new DataView(buf);
+      view.setUint32(0, jsonBytes.length);
+      for (let i = 0; i < jsonBytes.length; i++) {
+        view.setUint8(4 + i, jsonBytes[i]);
+      }
+      payload = new Uint8Array(buf);
+      payloadLength = buf.byteLength;
+      break;
+    }
+    default:
+      throw new Error(`Unknown message type: ${msg.type}`);
   }
 
+  // Build full message: header + payload
   const headerSize = 1 + 4 + 4 + 2;
   const totalSize = headerSize + payloadLength;
   const buffer = new ArrayBuffer(totalSize);

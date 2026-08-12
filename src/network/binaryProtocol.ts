@@ -5,9 +5,11 @@ export enum MessageType {
   DELETE = 1,
   CURSOR = 2,
   HEARTBEAT = 3,
+  SHAPE_INSERT = 4,
+  SHAPE_UPDATE = 5,
+  SHAPE_DELETE = 6,
 }
 
-// Base interface with common fields
 export interface BaseBinaryMessage {
   type: MessageType;
   clientId: number;
@@ -20,7 +22,7 @@ export interface BinaryInsert extends BaseBinaryMessage {
   parentLamport: number;
   vertexClientId: number;
   vertexLamport: number;
-  char: string; // single character
+  char: string;
 }
 
 export interface BinaryDelete extends BaseBinaryMessage {
@@ -38,4 +40,20 @@ export interface BinaryHeartbeat extends BaseBinaryMessage {
   type: MessageType.HEARTBEAT;
 }
 
-export type BinaryMessage = BinaryInsert | BinaryDelete | BinaryCursor | BinaryHeartbeat;
+export interface BinaryShapeInsert extends BaseBinaryMessage {
+  type: MessageType.SHAPE_INSERT;
+  shapeVertex: any;
+}
+
+export interface BinaryShapeUpdate extends BaseBinaryMessage {
+  type: MessageType.SHAPE_UPDATE;
+  vertexId: { clientId: number; lamportTime: number };
+  shapeData: any;
+}
+
+export interface BinaryShapeDelete extends BaseBinaryMessage {
+  type: MessageType.SHAPE_DELETE;
+  vertexId: { clientId: number; lamportTime: number };
+}
+
+export type BinaryMessage = BinaryInsert | BinaryDelete | BinaryCursor | BinaryHeartbeat | BinaryShapeInsert | BinaryShapeUpdate | BinaryShapeDelete;

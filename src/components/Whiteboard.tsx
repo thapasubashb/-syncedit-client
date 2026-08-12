@@ -1,10 +1,10 @@
 // src/components/Whiteboard.tsx
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { fabric } from 'fabric';
+import * as fabric from 'fabric';
 import { ShapeCRDT } from '../crdt/ShapeCRDT';
 import { ShapeVertex, ShapeData, ShapeVertexId } from '../crdt/shapeTypes';
 import { useWebSocket } from '../context/WebSocketContext';
-import { MessageType, BinaryInsert, BinaryDelete } from '../network';
+import { MessageType, BinaryShapeInsert, BinaryShapeUpdate, BinaryShapeDelete } from '../network';
 
 interface WhiteboardProps {
   clientId: number;
@@ -23,109 +23,67 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ clientId, shapeCRDT, onShapeUpd
   const [strokeWidth, setStrokeWidth] = useState(2);
   const isInternalUpdate = useRef(false);
 
-  const { clientId: wsClientId, sendBinary, isConnected } = useWebSocket();
+  const { clientId: wsClientId, sendBinary, onMessage, isConnected } = useWebSocket();
   const effectiveClientId = wsClientId || clientId;
 
-  // --- Initialize Fabric Canvas ---
-  useEffect(() => {
-    if (!canvasRef.current) return;
-
-    const canvas = new fabric.Canvas(canvasRef.current, {
-      width: 800,
-      height: 500,
-      backgroundColor: '#ffffff',
-    });
-    fabricCanvasRef.current = canvas;
-
-    // Load existing shapes from CRDT
+  // --- Apply a remote shape operation ---
+  const renderAllShapes = useCallback(() => {
+    if (!fabricCanvasRef.current) return;
+    const canvas = fabricCanvasRef.current;
+    isInternalUpdate.current = true;
+    canvas.clear();
     const shapes = shapeCRDT.getOrderedShapes();
+    console.log('🔄 Rendering shapes:', shapes.length);
     for (const vertex of shapes) {
       renderShape(canvas, vertex);
     }
+    canvas.renderAll();
+    isInternalUpdate.current = false;
+  }, [shapeCRDT]);
 
-    // --- Event: shape added (new shape) ---
-    canvas.on('object:added', (e) => {
-      if (isInternalUpdate.current) return;
-      const obj = e.target;
-      if (!obj) return;
-
-      const shapeData = fabricToShapeData(obj);
-      if (!shapeData) return;
-
-      const parentId: ShapeVertexId = { clientId: 0, lamportTime: 0 };
-      const vertex = shapeCRDT.insertShape(shapeData, parentId);
+  const applyShapeOperation = useCallback((msg: any) => {
+    console.log('📥 Applying shape operation:', msg.type);
+    if (msg.type === MessageType.SHAPE_INSERT) {
+      const insertMsg = msg as BinaryShapeInsert;
+      const vertex = insertMsg.shapeVertex;
+      // Insert into local CRDT using the proper method
+      const existing = shapeCRDT.getOrderedShapes().find(v => 
+        v.id.clientId === vertex.id.clientId && v.id.lamportTime === vertex.id.lamportTime
+      );
+      if (!existing) {
+        shapeCRDT.insertShapeWithId(vertex.shapeData, vertex.parentId, vertex.id);
+        onShapeUpdate();
+        renderAllShapes();
+      }
+    } else if (msg.type === MessageType.SHAPE_UPDATE) {
+      const updateMsg = msg as BinaryShapeUpdate;
+      shapeCRDT.updateShape(updateMsg.vertexId, updateMsg.shapeData);
       onShapeUpdate();
-
-      // Broadcast via binary protocol
-      const binaryMsg: BinaryInsert = {
-        type: MessageType.INSERT,
-        clientId: effectiveClientId,
-        lamportTime: vertex.id.lamportTime,
-        parentClientId: 0,
-        parentLamport: 0,
-        vertexClientId: vertex.id.clientId,
-        vertexLamport: vertex.id.lamportTime,
-        char: '', // not used for shapes
-      };
-      // We'll send shape data separately – for now, we store in a separate message.
-      // For simplicity, we'll broadcast the shape data as a JSON payload via the same binary channel.
-      // We'll extend the binary protocol later.
-      // For now, we'll use the existing sendBinary with a shape payload.
-      // But since our binary protocol doesn't support shapes yet, we'll send as JSON fallback.
-      sendBinary(JSON.stringify({
-        type: 'shape_insert',
-        vertex,
-      }));
-    });
-
-    // --- Event: object modified (update) ---
-    canvas.on('object:modified', (e) => {
-      if (isInternalUpdate.current) return;
-      const obj = e.target;
-      if (!obj) return;
-
-      // Find the vertex ID from the object's custom data
-      const vertexId = (obj as any).vertexId;
-      if (!vertexId) return;
-
-      const shapeData = fabricToShapeData(obj);
-      if (!shapeData) return;
-
-      shapeCRDT.updateShape(vertexId, shapeData);
+      renderAllShapes();
+    } else if (msg.type === MessageType.SHAPE_DELETE) {
+      const deleteMsg = msg as BinaryShapeDelete;
+      shapeCRDT.deleteShape(deleteMsg.vertexId);
       onShapeUpdate();
+      renderAllShapes();
+    }
+  }, [shapeCRDT, onShapeUpdate, renderAllShapes]);
 
-      sendBinary(JSON.stringify({
-        type: 'shape_update',
-        vertexId,
-        shapeData,
-      }));
-    });
-
-    // --- Event: object removed ---
-    canvas.on('object:removed', (e) => {
-      if (isInternalUpdate.current) return;
-      const obj = e.target;
-      if (!obj) return;
-
-      const vertexId = (obj as any).vertexId;
-      if (!vertexId) return;
-
-      shapeCRDT.deleteShape(vertexId);
-      onShapeUpdate();
-
-      sendBinary(JSON.stringify({
-        type: 'shape_delete',
-        vertexId,
-      }));
-    });
-
-    // Cleanup
-    return () => {
-      canvas.dispose();
+  // --- Register for binary shape messages ---
+  useEffect(() => {
+    const handleBinaryMessage = (msg: any) => {
+      console.log('📨 Binary message received:', msg.type);
+      if (msg.clientId === wsClientId) {
+        console.log('⏭️ Skipping own message');
+        return;
+      }
+      if (msg.type === MessageType.SHAPE_INSERT || msg.type === MessageType.SHAPE_UPDATE || msg.type === MessageType.SHAPE_DELETE) {
+        applyShapeOperation(msg);
+      }
     };
-  }, []);
+    onMessage('all', handleBinaryMessage);
+  }, [onMessage, wsClientId, applyShapeOperation]);
 
-  // --- Helper: Convert fabric object to ShapeData ---
+  // --- Helper: fabric object to ShapeData ---
   const fabricToShapeData = (obj: fabric.Object): ShapeData | null => {
     const type = obj.type as string;
     const base = {
@@ -154,7 +112,6 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ clientId, shapeCRDT, onShapeUpd
         ],
       };
     } else if (type === 'path') {
-      // For pen/freehand – simplified as path
       return {
         ...base,
         type: 'pen',
@@ -170,9 +127,8 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ clientId, shapeCRDT, onShapeUpd
     return null;
   };
 
-  // --- Render a shape from a vertex ---
+  // --- Render a single shape ---
   const renderShape = (canvas: fabric.Canvas, vertex: ShapeVertex) => {
-    isInternalUpdate.current = true;
     const data = vertex.shapeData;
     let obj: fabric.Object | null = null;
 
@@ -213,7 +169,6 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ clientId, shapeCRDT, onShapeUpd
         }
         break;
       case 'pen':
-        // Simplified as a path
         obj = new fabric.Path('M 0 0 L 10 10', {
           stroke: data.color,
           strokeWidth: data.strokeWidth,
@@ -228,7 +183,7 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ clientId, shapeCRDT, onShapeUpd
           left: data.x,
           top: data.y,
           fontSize: 20,
-          fill: data.color,
+          fill: data.fill,
           stroke: data.color,
           strokeWidth: data.strokeWidth,
           angle: data.rotation,
@@ -240,10 +195,101 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ clientId, shapeCRDT, onShapeUpd
       (obj as any).vertexId = vertex.id;
       canvas.add(obj);
     }
-    isInternalUpdate.current = false;
   };
 
-  // --- Tool handlers ---
+  // --- Initialize Fabric canvas ---
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    const canvas = new fabric.Canvas(canvasRef.current, {
+      width: 800,
+      height: 500,
+      backgroundColor: '#ffffff',
+    });
+    fabricCanvasRef.current = canvas;
+
+    // Load existing shapes
+    renderAllShapes();
+
+    // --- Event: object added ---
+    canvas.on('object:added', (e) => {
+      if (isInternalUpdate.current) return;
+      const obj = e.target;
+      if (!obj) return;
+
+      const shapeData = fabricToShapeData(obj);
+      if (!shapeData) return;
+
+      const parentId: ShapeVertexId = { clientId: 0, lamportTime: 0 };
+      const vertex = shapeCRDT.insertShape(shapeData, parentId);
+      onShapeUpdate();
+
+      console.log('🔵 Sending shape insert:', vertex);
+
+      const binaryMsg: BinaryShapeInsert = {
+        type: MessageType.SHAPE_INSERT,
+        clientId: effectiveClientId,
+        lamportTime: vertex.id.lamportTime,
+        shapeVertex: vertex,
+      };
+      sendBinary(binaryMsg);
+    });
+
+    // --- Event: object modified ---
+    canvas.on('object:modified', (e) => {
+      if (isInternalUpdate.current) return;
+      const obj = e.target;
+      if (!obj) return;
+
+      const vertexId = (obj as any).vertexId;
+      if (!vertexId) return;
+
+      const shapeData = fabricToShapeData(obj);
+      if (!shapeData) return;
+
+      shapeCRDT.updateShape(vertexId, shapeData);
+      onShapeUpdate();
+
+      console.log('🟡 Sending shape update:', vertexId);
+
+      const binaryMsg: BinaryShapeUpdate = {
+        type: MessageType.SHAPE_UPDATE,
+        clientId: effectiveClientId,
+        lamportTime: shapeCRDT.nextLamport(),
+        vertexId: vertexId,
+        shapeData: shapeData,
+      };
+      sendBinary(binaryMsg);
+    });
+
+    // --- Event: object removed ---
+    canvas.on('object:removed', (e) => {
+      if (isInternalUpdate.current) return;
+      const obj = e.target;
+      if (!obj) return;
+
+      const vertexId = (obj as any).vertexId;
+      if (!vertexId) return;
+
+      shapeCRDT.deleteShape(vertexId);
+      onShapeUpdate();
+
+      console.log('🔴 Sending shape delete:', vertexId);
+
+      const binaryMsg: BinaryShapeDelete = {
+        type: MessageType.SHAPE_DELETE,
+        clientId: effectiveClientId,
+        lamportTime: shapeCRDT.nextLamport(),
+        vertexId: vertexId,
+      };
+      sendBinary(binaryMsg);
+    });
+
+    return () => {
+      canvas.dispose();
+    };
+  }, []);
+
+  // --- Add shape via toolbar ---
   const addShape = (tool: Tool) => {
     if (!fabricCanvasRef.current) return;
     const canvas = fabricCanvasRef.current;
@@ -283,7 +329,6 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ clientId, shapeCRDT, onShapeUpd
 
   return (
     <div className="bg-white rounded-xl p-4 shadow-lg border border-gray-200">
-      {/* Toolbar */}
       <div className="flex flex-wrap gap-2 mb-4 items-center">
         <button
           onClick={() => setCurrentTool('select')}
@@ -332,7 +377,6 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ clientId, shapeCRDT, onShapeUpd
         <span className="text-sm text-gray-600">{strokeWidth}px</span>
       </div>
 
-      {/* Canvas */}
       <canvas
         ref={canvasRef}
         className="border border-gray-300 rounded-xl w-full"
