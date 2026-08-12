@@ -6,7 +6,7 @@ import { useWebSocket } from '../context/WebSocketContext';
 import { OperationQueue } from '../crdt/OperationQueue';
 import { HistoryManager } from '../crdt/HistoryManager';
 import { MessageType, BinaryInsert, BinaryDelete, BinaryCursor } from '../network';
-import { offlineStorage } from '../services/OfflineStorage';
+import { offlineStorage } from '../services/offlineStorage';
 import type { VertexId, Vertex } from '../crdt/types';
 
 interface EditorProps {
@@ -20,116 +20,140 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
   const [remoteCursors, setRemoteCursors] = useState<Map<number, number>>(new Map());
   const [opQueue] = useState(() => new OperationQueue());
   const [history] = useState(() => new HistoryManager());
-  const [documentId] = useState('default');
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const { clientId: wsClientId, sendBinary, onMessage, isConnected } = useWebSocket();
+  const effectiveClientId = wsClientId || clientId;
 
-  // --- History helpers ---
-  const pushHistory = (entry: { type: 'insert' | 'delete'; vertex?: Vertex; vertexId?: VertexId }) => {
-    history.push(entry);
-  };
-
-  // --- Undo / Redo ---
-  const performUndo = useCallback(() => {
-    if (!history.canUndo()) return;
-    const entry = history.popUndo();
-    if (!entry) return;
-
-    history.withRecordingOff(() => {
-      if (entry.type === 'insert' && entry.vertex) {
-        localDeleteChar(entry.vertex.id);
-      } else if (entry.type === 'delete' && entry.vertex) {
-        localInsertWithId(entry.vertex.char, entry.vertex.parentId, entry.vertex.id);
-      }
-    });
-    if (entry.type === 'insert' && entry.vertex) {
-      history.pushRedo({ type: 'delete', vertex: entry.vertex });
-    } else if (entry.type === 'delete' && entry.vertex) {
-      history.pushRedo({ type: 'insert', vertex: entry.vertex });
-    }
-  }, [history]);
-
-  const performRedo = useCallback(() => {
-    if (!history.canRedo()) return;
-    const entry = history.popRedo();
-    if (!entry) return;
-
-    history.withRecordingOff(() => {
-      if (entry.type === 'insert' && entry.vertex) {
-        localInsertWithId(entry.vertex.char, entry.vertex.parentId, entry.vertex.id);
-      } else if (entry.type === 'delete' && entry.vertex) {
-        localDeleteChar(entry.vertex.id);
-      }
-    });
-    history.push(entry);
-  }, [history]);
-
-  // --- Keyboard shortcuts ---
+  // --- Initialize offline storage ---
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        if (e.shiftKey) {
-          e.preventDefault();
-          performRedo();
+    const init = async () => {
+      await offlineStorage.init();
+      setIsInitialized(true);
+    };
+    init();
+  }, []);
+
+  // --- Apply binary message locally ---
+  const applyBinaryMessage = useCallback((msg: any) => {
+    if (msg.type === MessageType.INSERT) {
+      const insertMsg = msg as BinaryInsert;
+      const parentId = {
+        clientId: insertMsg.parentClientId,
+        lamportTime: insertMsg.parentLamport,
+      };
+      const vertexId = {
+        clientId: insertMsg.vertexClientId,
+        lamportTime: insertMsg.vertexLamport,
+      };
+      rga.updateClock(insertMsg.lamportTime);
+      rga.insertWithId(insertMsg.char, parentId, vertexId);
+      updateText();
+    } else if (msg.type === MessageType.DELETE) {
+      const deleteMsg = msg as BinaryDelete;
+      const vertexId = {
+        clientId: deleteMsg.vertexClientId,
+        lamportTime: deleteMsg.vertexLamport,
+      };
+      rga.updateClock(deleteMsg.lamportTime);
+      rga.delete(vertexId);
+      updateText();
+    } else if (msg.type === MessageType.CURSOR) {
+      const cursorMsg = msg as BinaryCursor;
+      setRemoteCursors(prev => {
+        const newMap = new Map(prev);
+        newMap.set(cursorMsg.clientId, cursorMsg.position);
+        return newMap;
+      });
+    }
+  }, [rga, updateText]);
+
+  // --- Remote binary message handler ---
+  useEffect(() => {
+    const handleBinaryMessage = (msg: any) => {
+      if (msg.clientId === wsClientId) return;
+      if (msg.type === MessageType.INSERT || msg.type === MessageType.DELETE) {
+        let queuedOp: any;
+        if (msg.type === MessageType.INSERT) {
+          const insertMsg = msg as BinaryInsert;
+          const vertexId = {
+            clientId: insertMsg.vertexClientId,
+            lamportTime: insertMsg.vertexLamport,
+          };
+          const parentId = {
+            clientId: insertMsg.parentClientId,
+            lamportTime: insertMsg.parentLamport,
+          };
+          queuedOp = {
+            type: 'insert' as const,
+            lamportTime: insertMsg.lamportTime,
+            clientId: insertMsg.clientId,
+            vertexId: vertexId,
+            char: insertMsg.char,
+            parentId: parentId,
+          };
         } else {
-          e.preventDefault();
-          performUndo();
+          const deleteMsg = msg as BinaryDelete;
+          const vertexId = {
+            clientId: deleteMsg.vertexClientId,
+            lamportTime: deleteMsg.vertexLamport,
+          };
+          queuedOp = {
+            type: 'delete' as const,
+            lamportTime: deleteMsg.lamportTime,
+            clientId: deleteMsg.clientId,
+            vertexId: vertexId,
+          };
+        }
+        opQueue.enqueue(queuedOp);
+        const readyOps = opQueue.process();
+        for (const op of readyOps) {
+          if (op.type === 'insert' && op.vertexId && op.char && op.parentId) {
+            rga.updateClock(op.lamportTime);
+            rga.insertWithId(op.char, op.parentId, op.vertexId);
+          } else if (op.type === 'delete' && op.vertexId) {
+            rga.updateClock(op.lamportTime);
+            rga.delete(op.vertexId);
+          }
+        }
+        if (readyOps.length > 0) {
+          updateText();
+        }
+      } else {
+        if (msg.type === MessageType.CURSOR) {
+          const cursorMsg = msg as BinaryCursor;
+          setRemoteCursors(prev => {
+            const newMap = new Map(prev);
+            newMap.set(cursorMsg.clientId, cursorMsg.position);
+            return newMap;
+          });
         }
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [performUndo, performRedo]);
 
-  // --- Offline sync on reconnect ---
+    onMessage('all', handleBinaryMessage);
+  }, [onMessage, rga, updateText, wsClientId, opQueue]);
+
+  // --- Flush offline queue ---
   useEffect(() => {
-    if (isConnected && wsClientId !== null) {
-      const syncOfflineOps = async () => {
-        const unsynced = await offlineStorage.getUnsyncedOperations(documentId);
-        if (unsynced.length === 0) return;
-        console.log(`📤 Syncing ${unsynced.length} offline operations...`);
-        const idsToMark: string[] = [];
-        for (const item of unsynced) {
-          const op = item.operation;
-          if (op.type === MessageType.INSERT) {
-            const binaryMsg: BinaryInsert = {
-              type: MessageType.INSERT,
-              clientId: op.clientId,
-              lamportTime: op.lamportTime,
-              parentClientId: op.parentClientId,
-              parentLamport: op.parentLamport,
-              vertexClientId: op.vertexClientId,
-              vertexLamport: op.vertexLamport,
-              char: op.char,
-            };
-            sendBinary(binaryMsg);
-          } else if (op.type === MessageType.DELETE) {
-            const binaryMsg: BinaryDelete = {
-              type: MessageType.DELETE,
-              clientId: op.clientId,
-              lamportTime: op.lamportTime,
-              vertexClientId: op.vertexClientId,
-              vertexLamport: op.vertexLamport,
-            };
-            sendBinary(binaryMsg);
-          }
-          idsToMark.push(item.id);
-        }
-        await offlineStorage.markSynced(idsToMark);
-        console.log(`✅ Synced ${idsToMark.length} offline operations.`);
-      };
-      syncOfflineOps();
-    }
-  }, [isConnected, wsClientId, documentId, sendBinary]);
+    const flushPending = async () => {
+      if (!isConnected || !isInitialized) return;
+      const pending = await offlineStorage.getPendingOperations();
+      if (pending.length === 0) return;
 
-  // --- Save operation offline if not connected ---
-  const saveOperationOffline = useCallback(async (operation: any) => {
-    if (!isConnected) {
-      await offlineStorage.saveOperation(operation, documentId);
-    }
-  }, [isConnected, documentId]);
+      console.log(`📤 Flushing ${pending.length} offline operations...`);
+      for (const op of pending) {
+        applyBinaryMessage(op);
+        sendBinary(op);
+      }
+      await offlineStorage.clearPendingOperations();
+      console.log('✅ Offline queue flushed.');
+    };
 
-  // --- Broadcast / sync methods ---
+    flushPending();
+  }, [isConnected, isInitialized, sendBinary, applyBinaryMessage]);
+
+  // --- Send cursor ---
   const sendCursorPosition = useCallback(() => {
     if (textareaRef.current && isConnected && wsClientId !== null) {
       const pos = textareaRef.current.selectionStart;
@@ -143,180 +167,129 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
     }
   }, [sendBinary, isConnected, wsClientId, rga]);
 
-  // --- Binary message handler ---
-  useEffect(() => {
-    const handleBinaryMessage = (msg: any) => {
-      if (msg.clientId === wsClientId) return;
-
-      if (msg.type === MessageType.INSERT) {
-        const insertMsg = msg as BinaryInsert;
-        const parentId = {
-          clientId: insertMsg.parentClientId,
-          lamportTime: insertMsg.parentLamport,
-        };
-        const vertexId = {
-          clientId: insertMsg.vertexClientId,
-          lamportTime: insertMsg.vertexLamport,
-        };
-        const queuedOp = {
-          type: 'insert' as const,
-          lamportTime: insertMsg.lamportTime,
-          clientId: insertMsg.clientId,
-          vertexId: vertexId,
-          char: insertMsg.char,
-          parentId: parentId,
-        };
-        opQueue.enqueue(queuedOp);
-        const readyOps = opQueue.process();
-        for (const op of readyOps) {
-          if (op.type === 'insert' && op.vertexId && op.char && op.parentId) {
-            rga.updateClock(op.lamportTime);
-            rga.insertWithId(op.char, op.parentId, op.vertexId);
-          }
-        }
-        if (readyOps.length > 0) {
-          updateText();
-        }
-      } else if (msg.type === MessageType.DELETE) {
-        const deleteMsg = msg as BinaryDelete;
-        const vertexId = {
-          clientId: deleteMsg.vertexClientId,
-          lamportTime: deleteMsg.vertexLamport,
-        };
-        const queuedOp = {
-          type: 'delete' as const,
-          lamportTime: deleteMsg.lamportTime,
-          clientId: deleteMsg.clientId,
-          vertexId: vertexId,
-        };
-        opQueue.enqueue(queuedOp);
-        const readyOps = opQueue.process();
-        for (const op of readyOps) {
-          if (op.type === 'delete' && op.vertexId) {
-            rga.updateClock(op.lamportTime);
-            rga.delete(op.vertexId);
-          }
-        }
-        if (readyOps.length > 0) {
-          updateText();
-        }
-      } else if (msg.type === MessageType.CURSOR) {
-        const cursorMsg = msg as BinaryCursor;
-        setRemoteCursors(prev => {
-          const newMap = new Map(prev);
-          newMap.set(cursorMsg.clientId, cursorMsg.position);
-          return newMap;
-        });
-      }
-    };
-
-    onMessage('all', handleBinaryMessage);
-  }, [onMessage, rga, updateText, wsClientId, opQueue]);
-
-  // --- Local operations with history and offline ---
-  const localInsertChar = useCallback((char: string, parentId: VertexId) => {
+  // --- Local insert ---
+  const localInsertChar = useCallback(async (char: string, parentId: VertexId) => {
     const vertex = insertChar(char, parentId);
-    pushHistory({ type: 'insert', vertex });
-    if (wsClientId !== null) {
-      const binaryMsg: BinaryInsert = {
-        type: MessageType.INSERT,
-        clientId: wsClientId,
-        lamportTime: vertex.id.lamportTime,
-        parentClientId: parentId.clientId,
-        parentLamport: parentId.lamportTime,
-        vertexClientId: vertex.id.clientId,
-        vertexLamport: vertex.id.lamportTime,
-        char: char,
-      };
-      if (isConnected) {
-        sendBinary(binaryMsg);
-      } else {
-        saveOperationOffline(binaryMsg);
-      }
+    history.push({ type: 'insert', vertex });
+    const binaryMsg: BinaryInsert = {
+      type: MessageType.INSERT,
+      clientId: wsClientId || effectiveClientId,
+      lamportTime: vertex.id.lamportTime,
+      parentClientId: parentId.clientId,
+      parentLamport: parentId.lamportTime,
+      vertexClientId: vertex.id.clientId,
+      vertexLamport: vertex.id.lamportTime,
+      char: char,
+    };
+    if (isConnected) {
+      sendBinary(binaryMsg);
     } else {
-      const binaryMsg: BinaryInsert = {
-        type: MessageType.INSERT,
-        clientId: clientId,
-        lamportTime: vertex.id.lamportTime,
-        parentClientId: parentId.clientId,
-        parentLamport: parentId.lamportTime,
-        vertexClientId: vertex.id.clientId,
-        vertexLamport: vertex.id.lamportTime,
-        char: char,
-      };
-      saveOperationOffline(binaryMsg);
+      await offlineStorage.saveOperation(binaryMsg);
     }
     return vertex;
-  }, [insertChar, sendBinary, wsClientId, isConnected, saveOperationOffline, clientId]);
+  }, [insertChar, sendBinary, wsClientId, effectiveClientId, isConnected, history]);
 
-  const localDeleteChar = useCallback((vertexId: VertexId) => {
-    // Find vertex for history
+  // --- Local delete ---
+  const localDeleteChar = useCallback(async (vertexId: VertexId) => {
     const ordered = rga.getOrderedVertices();
-    const vertex = ordered.find(v => v.id.clientId === vertexId.clientId && v.id.lamportTime === vertexId.lamportTime);
+    const idx = ordered.findIndex(v =>
+      v.id.clientId === vertexId.clientId && v.id.lamportTime === vertexId.lamportTime
+    );
+    const vertex = idx !== -1 ? ordered[idx] : undefined;
     if (!vertex) return;
-    pushHistory({ type: 'delete', vertex });
+    history.push({ type: 'delete', vertex });
     deleteChar(vertexId);
-    if (wsClientId !== null) {
-      const binaryMsg: BinaryDelete = {
-        type: MessageType.DELETE,
-        clientId: wsClientId,
-        lamportTime: rga.nextLamport(),
-        vertexClientId: vertexId.clientId,
-        vertexLamport: vertexId.lamportTime,
-      };
-      if (isConnected) {
-        sendBinary(binaryMsg);
-      } else {
-        saveOperationOffline(binaryMsg);
-      }
+    const binaryMsg: BinaryDelete = {
+      type: MessageType.DELETE,
+      clientId: wsClientId || effectiveClientId,
+      lamportTime: rga.nextLamport(),
+      vertexClientId: vertexId.clientId,
+      vertexLamport: vertexId.lamportTime,
+    };
+    if (isConnected) {
+      sendBinary(binaryMsg);
     } else {
-      const binaryMsg: BinaryDelete = {
-        type: MessageType.DELETE,
-        clientId: clientId,
-        lamportTime: rga.nextLamport(),
-        vertexClientId: vertexId.clientId,
-        vertexLamport: vertexId.lamportTime,
-      };
-      saveOperationOffline(binaryMsg);
+      await offlineStorage.saveOperation(binaryMsg);
     }
-  }, [deleteChar, sendBinary, wsClientId, isConnected, saveOperationOffline, clientId, rga]);
+  }, [deleteChar, sendBinary, wsClientId, effectiveClientId, rga, isConnected, history]);
 
-  const localInsertWithId = useCallback((char: string, parentId: VertexId, id: VertexId) => {
+  // --- Insert with ID (for redo / undo of delete) ---
+  const localInsertWithId = useCallback(async (char: string, parentId: VertexId, id: VertexId) => {
     const vertex = rga.insertWithId(char, parentId, id);
-    if (wsClientId !== null) {
-      const binaryMsg: BinaryInsert = {
-        type: MessageType.INSERT,
-        clientId: wsClientId,
-        lamportTime: id.lamportTime,
-        parentClientId: parentId.clientId,
-        parentLamport: parentId.lamportTime,
-        vertexClientId: id.clientId,
-        vertexLamport: id.lamportTime,
-        char: char,
-      };
-      if (isConnected) {
-        sendBinary(binaryMsg);
-      } else {
-        saveOperationOffline(binaryMsg);
-      }
+    const binaryMsg: BinaryInsert = {
+      type: MessageType.INSERT,
+      clientId: wsClientId || effectiveClientId,
+      lamportTime: id.lamportTime,
+      parentClientId: parentId.clientId,
+      parentLamport: parentId.lamportTime,
+      vertexClientId: id.clientId,
+      vertexLamport: id.lamportTime,
+      char: char,
+    };
+    if (isConnected) {
+      sendBinary(binaryMsg);
     } else {
-      const binaryMsg: BinaryInsert = {
-        type: MessageType.INSERT,
-        clientId: clientId,
-        lamportTime: id.lamportTime,
-        parentClientId: parentId.clientId,
-        parentLamport: parentId.lamportTime,
-        vertexClientId: id.clientId,
-        vertexLamport: id.lamportTime,
-        char: char,
-      };
-      saveOperationOffline(binaryMsg);
+      await offlineStorage.saveOperation(binaryMsg);
     }
     updateText();
     return vertex;
-  }, [rga, sendBinary, wsClientId, isConnected, saveOperationOffline, clientId, updateText]);
+  }, [rga, sendBinary, wsClientId, effectiveClientId, isConnected, updateText]);
 
-  // --- Textarea sync ---
+  // --- Undo ---
+  const performUndo = useCallback(async () => {
+    if (!history.canUndo()) return;
+    const entry = history.popUndo();
+    if (!entry) return;
+
+    await history.withRecordingOff(async () => {
+      if (entry.type === 'insert' && entry.vertex) {
+        await localDeleteChar(entry.vertex.id);
+      } else if (entry.type === 'delete' && entry.vertex) {
+        const vertex = entry.vertex;
+        await localInsertWithId(vertex.char, vertex.parentId, vertex.id);
+      }
+    });
+    if (entry.type === 'insert' && entry.vertex) {
+      history.pushRedo({ type: 'delete', vertex: entry.vertex });
+    } else if (entry.type === 'delete' && entry.vertex) {
+      history.pushRedo({ type: 'insert', vertex: entry.vertex });
+    }
+  }, [history, localDeleteChar, localInsertWithId]);
+
+  // --- Redo ---
+  const performRedo = useCallback(async () => {
+    if (!history.canRedo()) return;
+    const entry = history.popRedo();
+    if (!entry) return;
+
+    await history.withRecordingOff(async () => {
+      if (entry.type === 'insert' && entry.vertex) {
+        await localInsertWithId(entry.vertex.char, entry.vertex.parentId, entry.vertex.id);
+      } else if (entry.type === 'delete' && entry.vertex) {
+        await localDeleteChar(entry.vertex.id);
+      }
+    });
+    history.push(entry);
+  }, [history, localInsertWithId, localDeleteChar]);
+
+    // --- Keyboard shortcuts (FIXED) ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) {
+          e.preventDefault();
+          performRedo();
+        } else {
+          e.preventDefault();
+          performUndo();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [performUndo, performRedo]);
+  
+  // --- Sync textarea ---
   useEffect(() => {
     if (textareaRef.current && !isInternalUpdate.current) {
       const cursorPos = textareaRef.current.selectionStart;
@@ -363,6 +336,7 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
     }
   }, [text, localInsertChar, localDeleteChar, getVertexAt, getHead]);
 
+  // --- Enter key ---
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -379,7 +353,6 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
     }
   }, [localInsertChar, getVertexAt, getHead]);
 
-  // --- Render ---
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-3 px-2 flex-wrap gap-2">
@@ -391,11 +364,11 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs px-2 py-1 rounded-full ${
-            isConnected 
-              ? 'text-green-600 bg-green-100/80' 
+            isConnected
+              ? 'text-green-600 bg-green-100/80'
               : 'text-red-600 bg-red-100/80'
           } backdrop-blur-sm`}>
-            {isConnected ? '● Live' : '● Offline'}
+            {isConnected ? '● Live' : '📴 Offline'}
           </span>
           <span className="text-xs text-slate-500 bg-white/50 backdrop-blur-sm px-2 py-1 rounded-full">
             👥 {remoteCursors.size + 1} online

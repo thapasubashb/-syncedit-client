@@ -38,11 +38,11 @@ export class HistoryManager {
     return this.redoStack.length > 0;
   }
 
-  // Temporarily disable recording for a function
-  withRecordingOff<T>(fn: () => T): T {
+  // Temporarily disable recording – now async so we can await inside
+  async withRecordingOff<T>(fn: () => Promise<T> | T): Promise<T> {
     this.isRecording = false;
     try {
-      return fn();
+      return await fn();
     } finally {
       this.isRecording = true;
     }
