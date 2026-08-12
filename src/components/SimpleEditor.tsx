@@ -4,8 +4,9 @@ import { useCRDT } from '../hooks/useCRDT';
 import { ROOT_ID } from '../crdt/types';
 import { useWebSocket } from '../context/WebSocketContext';
 import { OperationQueue } from '../crdt/OperationQueue';
+import { HistoryManager } from '../crdt/HistoryManager';
 import { MessageType, BinaryInsert, BinaryDelete, BinaryCursor } from '../network';
-import type { VertexId } from '../crdt/types';
+import type { VertexId, Vertex } from '../crdt/types';
 
 interface EditorProps {
   clientId: number;
@@ -17,16 +18,73 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
   const isInternalUpdate = useRef(false);
   const [remoteCursors, setRemoteCursors] = useState<Map<number, number>>(new Map());
   const [opQueue] = useState(() => new OperationQueue());
+  const [history] = useState(() => new HistoryManager());
 
   const { clientId: wsClientId, sendBinary, onMessage, isConnected } = useWebSocket();
   const effectiveClientId = wsClientId || clientId;
 
-  // Log when clientId updates
-  useEffect(() => {
-    console.log('🆔 WebSocket clientId updated:', wsClientId);
-  }, [wsClientId]);
+  // --- History helpers ---
+  const pushHistory = (entry: { type: 'insert' | 'delete'; vertex?: Vertex; vertexId?: VertexId }) => {
+    history.push(entry);
+  };
 
-  // Send cursor position as binary
+  // --- Undo / Redo functions ---
+  const performUndo = useCallback(() => {
+    if (!history.canUndo()) return;
+    const entry = history.popUndo();
+    if (!entry) return;
+
+    history.withRecordingOff(() => {
+      if (entry.type === 'insert' && entry.vertex) {
+        // Undo insert → delete the vertex
+        localDeleteChar(entry.vertex.id);
+      } else if (entry.type === 'delete' && entry.vertex) {
+        // Undo delete → re-insert the vertex with its original ID
+        localInsertWithId(entry.vertex.char, entry.vertex.parentId, entry.vertex.id);
+      }
+    });
+    // Push inverse operation to redo stack
+    if (entry.type === 'insert' && entry.vertex) {
+      history.pushRedo({ type: 'delete', vertex: entry.vertex });
+    } else if (entry.type === 'delete' && entry.vertex) {
+      history.pushRedo({ type: 'insert', vertex: entry.vertex });
+    }
+  }, [history]);
+
+  const performRedo = useCallback(() => {
+    if (!history.canRedo()) return;
+    const entry = history.popRedo();
+    if (!entry) return;
+
+    history.withRecordingOff(() => {
+      if (entry.type === 'insert' && entry.vertex) {
+        localInsertWithId(entry.vertex.char, entry.vertex.parentId, entry.vertex.id);
+      } else if (entry.type === 'delete' && entry.vertex) {
+        localDeleteChar(entry.vertex.id);
+      }
+    });
+    // Push back to undo stack
+    history.push(entry);
+  }, [history]);
+
+  // --- Keyboard shortcuts ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (e.shiftKey) {
+          e.preventDefault();
+          performRedo();
+        } else {
+          e.preventDefault();
+          performUndo();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [performUndo, performRedo]);
+
+  // --- Broadcast / sync methods ---
   const sendCursorPosition = useCallback(() => {
     if (textareaRef.current && isConnected && wsClientId !== null) {
       const pos = textareaRef.current.selectionStart;
@@ -36,28 +94,17 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         lamportTime: rga.nextLamport(),
         position: pos,
       };
-      console.log('🟡 Sending cursor:', cursorMsg);
       sendBinary(cursorMsg);
-    } else {
-      console.warn('⛔ Cannot send cursor: wsClientId=', wsClientId, 'isConnected=', isConnected);
     }
   }, [sendBinary, isConnected, wsClientId, rga]);
 
-  // Handle binary messages
+  // --- Binary message handler ---
   useEffect(() => {
     const handleBinaryMessage = (msg: any) => {
-      console.log('📥 Binary handler received:', msg);
-
-      // Skip our own messages
-      if (msg.clientId === wsClientId) {
-        console.log('⏭️ Skipping own message');
-        return;
-      }
+      if (msg.clientId === wsClientId) return;
 
       if (msg.type === MessageType.INSERT) {
         const insertMsg = msg as BinaryInsert;
-        console.log('📥 Processing INSERT from client', insertMsg.clientId);
-
         const parentId = {
           clientId: insertMsg.parentClientId,
           lamportTime: insertMsg.parentLamport,
@@ -66,7 +113,6 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
           clientId: insertMsg.vertexClientId,
           lamportTime: insertMsg.vertexLamport,
         };
-
         const queuedOp = {
           type: 'insert' as const,
           lamportTime: insertMsg.lamportTime,
@@ -85,17 +131,13 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         }
         if (readyOps.length > 0) {
           updateText();
-          console.log(`📥 Applied ${readyOps.length} remote inserts`);
         }
       } else if (msg.type === MessageType.DELETE) {
         const deleteMsg = msg as BinaryDelete;
-        console.log('📥 Processing DELETE from client', deleteMsg.clientId);
-
         const vertexId = {
           clientId: deleteMsg.vertexClientId,
           lamportTime: deleteMsg.vertexLamport,
         };
-
         const queuedOp = {
           type: 'delete' as const,
           lamportTime: deleteMsg.lamportTime,
@@ -112,11 +154,9 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         }
         if (readyOps.length > 0) {
           updateText();
-          console.log(`📥 Applied ${readyOps.length} remote deletes`);
         }
       } else if (msg.type === MessageType.CURSOR) {
         const cursorMsg = msg as BinaryCursor;
-        console.log('📥 Processing CURSOR from client', cursorMsg.clientId, 'position:', cursorMsg.position);
         setRemoteCursors(prev => {
           const newMap = new Map(prev);
           newMap.set(cursorMsg.clientId, cursorMsg.position);
@@ -125,14 +165,13 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
       }
     };
 
-    // Register handler for all binary messages
     onMessage('all', handleBinaryMessage);
-    console.log('✅ Binary message handler registered');
   }, [onMessage, rga, updateText, wsClientId, opQueue]);
 
-  // Send insert operation as binary
+  // --- Local operations with history ---
   const localInsertChar = useCallback((char: string, parentId: VertexId) => {
     const vertex = insertChar(char, parentId);
+    pushHistory({ type: 'insert', vertex });
     if (wsClientId !== null) {
       const binaryMsg: BinaryInsert = {
         type: MessageType.INSERT,
@@ -144,16 +183,18 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         vertexLamport: vertex.id.lamportTime,
         char: char,
       };
-      console.log('🔵 Sending INSERT binary:', binaryMsg);
       sendBinary(binaryMsg);
-    } else {
-      console.warn('⛔ Cannot send INSERT: wsClientId is null');
     }
     return vertex;
-  }, [insertChar, sendBinary, wsClientId]);
+  }, [insertChar, sendBinary, wsClientId, pushHistory]);
 
-  // Send delete operation as binary
   const localDeleteChar = useCallback((vertexId: VertexId) => {
+    // Get vertex data before deletion for history
+    const vertex = rga.getVertexAt(rga.getOrderedVertices().findIndex(v => 
+      v.id.clientId === vertexId.clientId && v.id.lamportTime === vertexId.lamportTime
+    ));
+    if (!vertex) return;
+    pushHistory({ type: 'delete', vertex });
     deleteChar(vertexId);
     if (wsClientId !== null) {
       const binaryMsg: BinaryDelete = {
@@ -163,13 +204,31 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
         vertexClientId: vertexId.clientId,
         vertexLamport: vertexId.lamportTime,
       };
-      console.log('🔴 Sending DELETE binary:', binaryMsg);
       sendBinary(binaryMsg);
-    } else {
-      console.warn('⛔ Cannot send DELETE: wsClientId is null');
     }
-  }, [deleteChar, sendBinary, wsClientId, rga]);
+  }, [deleteChar, sendBinary, wsClientId, rga, pushHistory]);
 
+  const localInsertWithId = useCallback((char: string, parentId: VertexId, id: VertexId) => {
+    // Used for redo / undo of delete
+    const vertex = rga.insertWithId(char, parentId, id);
+    if (wsClientId !== null) {
+      const binaryMsg: BinaryInsert = {
+        type: MessageType.INSERT,
+        clientId: wsClientId,
+        lamportTime: id.lamportTime,
+        parentClientId: parentId.clientId,
+        parentLamport: parentId.lamportTime,
+        vertexClientId: id.clientId,
+        vertexLamport: id.lamportTime,
+        char: char,
+      };
+      sendBinary(binaryMsg);
+    }
+    updateText();
+    return vertex;
+  }, [rga, sendBinary, wsClientId, updateText]);
+
+  // --- Textarea sync ---
   useEffect(() => {
     if (textareaRef.current && !isInternalUpdate.current) {
       const cursorPos = textareaRef.current.selectionStart;
@@ -180,6 +239,7 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
     isInternalUpdate.current = false;
   }, [text]);
 
+  // --- User input ---
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     isInternalUpdate.current = true;
     const newText = e.target.value;
@@ -231,6 +291,7 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
     }
   }, [localInsertChar, getVertexAt, getHead]);
 
+  // --- Render ---
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-3 px-2 flex-wrap gap-2">
@@ -250,6 +311,9 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
           </span>
           <span className="text-xs text-slate-500 bg-white/50 backdrop-blur-sm px-2 py-1 rounded-full">
             👥 {remoteCursors.size + 1} online
+          </span>
+          <span className="text-xs text-slate-500 bg-white/50 backdrop-blur-sm px-2 py-1 rounded-full">
+            {history.canUndo() ? '↩️' : '—'}
           </span>
         </div>
       </div>

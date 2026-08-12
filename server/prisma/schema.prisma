@@ -1,0 +1,29 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  name      String   @default("Untitled")
+  content   String   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  operations Operation[]
+}
+
+model Operation {
+  id          Int      @id @default(autoincrement())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id])
+  clientId    Int
+  type        String
+  vertexId    String?
+  char        String?
+  parentId    String?
+  lamportTime Int
+  createdAt   DateTime @default(now())
+}
