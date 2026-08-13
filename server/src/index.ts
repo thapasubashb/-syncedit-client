@@ -1,5 +1,5 @@
 // server/src/index.ts
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import http from 'http';
@@ -13,7 +13,7 @@ const port = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json());
 
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', message: 'Canvas_Sync server running' });
 });
 
@@ -67,7 +67,8 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
 
       if (isBinaryMessage) {
         // --- Binary message ---
-        const msg = decodeBinaryMessage(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+        // ✅ FIXED: Use clean ArrayBuffer from the Buffer
+        const msg = decodeBinaryMessage(new Uint8Array(data).buffer);
         console.log(`📨 Binary from ${msg.clientId}: type=${msg.type}`);
 
         const client = clients.get(ws);
