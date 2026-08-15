@@ -2,29 +2,180 @@
 @tailwind components;
 @tailwind utilities;
 
-html { scroll-behavior: smooth; }
-body { @apply font-sans antialiased; }
+/* ═════════════════════════════════════════════════════════════
+   CANVASSYNC — BLUEYARD LUMINOUS FLUID ATMOSPHERIC ENGINE
+   ═════════════════════════════════════════════════════════════ */
 
-/* Exact Sky Gradient from your image - This now runs from top to bottom completely unbroken */
-.bg-sky-gradient {
-  background: linear-gradient(180deg, #60A5D2 0%, #9BB9E5 25%, #CDB4DB 50%, #F0B3C3 75%, #F9A786 100%);
+:root {
+  /* ── 4-Slide Luminous Atmospheric Sky Gradients ── */
+  --bg-gradient-slide1: linear-gradient(135deg, #7e9af7 0%, #a5b4fc 25%, #c4b5fd 50%, #93c5fd 75%, #bfdbfe 100%);
+  --bg-gradient-slide2: linear-gradient(135deg, #93c5fd 0%, #bfdbfe 30%, #e0e7ff 65%, #f8fafc 100%);
+  --bg-gradient-slide3: linear-gradient(135deg, #2dd4bf 0%, #5eead4 30%, #38bdf8 65%, #e0f2fe 100%);
+  --bg-gradient-slide4: linear-gradient(135deg, #f472b6 0%, #e879f9 30%, #c084fc 65%, #fde047 100%);
+
+  /* ── Surface Glass Tokens ── */
+  --glass-surface-luminous: rgba(255, 255, 255, 0.45);
+  --glass-surface-pill: rgba(255, 255, 255, 0.65);
+  --glass-border-luminous: rgba(255, 255, 255, 0.75);
+  --glass-border-subtle: rgba(255, 255, 255, 0.4);
+
+  /* ── Typography & System ── */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Geist Mono', monospace;
+
+  /* ── High-Contrast Text Colors on Luminous Gradient ── */
+  --text-dark-primary: #090d16;
+  --text-dark-secondary: rgba(9, 13, 22, 0.78);
+  --text-dark-muted: rgba(9, 13, 22, 0.52);
+  --text-dark-accent: #2563eb;
 }
 
-::-webkit-scrollbar { @apply w-2; }
-::-webkit-scrollbar-track { @apply bg-[#CDB4DB]/30; }
-::-webkit-scrollbar-thumb { @apply bg-gradient-to-b from-[#60A5D2] to-[#F9A786] rounded-full; }
-/* Hide scrollbar for Chrome, Safari and Opera */
-::-webkit-scrollbar {
-  width: 0;
-  background: transparent;
+/* ── Base ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-/* Hide scrollbar for Firefox */
-* {
-  scrollbar-width: none;
+html {
+  scroll-behavior: auto;
+  font-size: 16px;
+  background-color: #7e9af7;
+  color: var(--text-dark-primary);
 }
 
-/* For IE/Edge */
 body {
-  -ms-overflow-style: none;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-gradient-slide1);
+  color: var(--text-dark-primary);
+  overflow-x: hidden;
+}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 0; background: transparent; }
+* { scrollbar-width: none; }
+body { -ms-overflow-style: none; }
+
+/* ── Frosted Glass Panels & Boxes ── */
+.glass-luminous {
+  background: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.06);
+}
+
+.glass-pill-nav {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+}
+
+.glass-counter-box {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+
+.card-luminous {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.06);
+  transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-luminous:hover {
+  background: rgba(255, 255, 255, 0.75);
+  border-color: rgba(255, 255, 255, 1);
+  transform: translateY(-6px);
+  box-shadow: 0 24px 50px rgba(37, 99, 235, 0.12);
+}
+
+/* ── Typography Classes ── */
+.text-display-luminous {
+  font-size: clamp(2.4rem, 5.5vw, 4.75rem);
+  font-weight: 350;
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+  color: var(--text-dark-primary);
+}
+
+.text-headline-luminous {
+  font-size: clamp(1.6rem, 3.2vw, 2.75rem);
+  font-weight: 350;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: var(--text-dark-primary);
+}
+
+.text-body-luminous {
+  font-size: clamp(0.95rem, 1.25vw, 1.2rem);
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--text-dark-secondary);
+}
+
+.text-eyebrow-luminous {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-dark-muted);
+}
+
+/* ── Primary CTA Button ── */
+.cta-button-luminous {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 2.4rem;
+  background: #090d16;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 9999px;
+  color: #FFFFFF;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 12px 30px rgba(9, 13, 22, 0.18);
+  position: relative;
+  overflow: hidden;
+}
+
+.cta-button-luminous::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  border-radius: inherit;
+}
+
+.cta-button-luminous:hover::before {
+  opacity: 1;
+}
+
+.cta-button-luminous:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.28);
+  color: #FFFFFF;
+}
+
+.cta-button-luminous span {
+  position: relative;
+  z-index: 1;
 }

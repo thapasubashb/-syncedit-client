@@ -3,28 +3,39 @@ import { Link } from 'react-router-dom';
 
 export default function Navbar() {
   return (
-    <nav className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-[96%] max-w-7xl bg-white/15 backdrop-blur-xl border border-white/30 rounded-2xl px-4 py-3 shadow-2xl flex items-center justify-between mx-auto transition-all">
-      <Link to="/" className="text-xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-500 bg-clip-text text-transparent">
-        SyncEdit
-      </Link>
-      
-      <div className="hidden md:flex items-center gap-6">
-        <Link to="/" className="text-slate-700/90 hover:text-slate-900 transition font-medium relative group">
-          Home
-          <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 group-hover:w-full" />
+    <header className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-7xl">
+      <nav className="glass-pill-nav rounded-full px-6 py-3 md:px-8 md:py-3.5 shadow-md flex items-center justify-between mx-auto border border-white/80 backdrop-blur-2xl transition-all duration-300">
+        
+        {/* Brand Logo with Glowing Bead */}
+        <Link to="/" className="flex items-center gap-2.5 group select-none">
+          <div className="w-2.5 h-2.5 rounded-full bg-blue-600 group-hover:scale-125 transition-transform duration-300 shadow-[0_0_8px_#2563eb]" />
+          <span className="font-sans text-base font-bold tracking-tight text-slate-900 uppercase">
+            CANVAS<span className="font-light text-slate-600">SYNC</span>
+          </span>
         </Link>
-        <Link to="/features" className="text-slate-700/90 hover:text-slate-900 transition font-medium relative group">
-          Features
-          <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 group-hover:w-full" />
-        </Link>
-        <Link to="/about" className="text-slate-700/90 hover:text-slate-900 transition font-medium relative group">
-          About
-          <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 group-hover:w-full" />
-        </Link>
-        <Link to="/editor" className="px-5 py-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-full font-medium transition shadow-lg hover:shadow-xl hover:scale-105 text-sm">
-          Get Started
-        </Link>
-      </div>
-    </nav>
+        
+        {/* Navigation Links */}
+        <div className="flex items-center gap-6 md:gap-8">
+          <Link 
+            to="/" 
+            className="text-xs font-mono font-medium tracking-wider text-slate-700 hover:text-blue-600 transition-colors uppercase"
+          >
+            Home
+          </Link>
+          <Link 
+            to="/workspace" 
+            className="text-xs font-mono font-medium tracking-wider text-slate-700 hover:text-blue-600 transition-colors uppercase"
+          >
+            Hub
+          </Link>
+          <Link 
+            to="/workspace" 
+            className="px-5 py-2 bg-slate-900 hover:bg-blue-600 text-white rounded-full font-mono text-xs tracking-wider transition-colors shadow-sm"
+          >
+            WORKSPACE →
+          </Link>
+        </div>
+      </nav>
+    </header>
   );
 }

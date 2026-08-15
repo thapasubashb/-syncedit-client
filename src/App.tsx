@@ -3,6 +3,7 @@ import Home from './pages/Home';
 import Features from './pages/Features';
 import About from './pages/About';
 import Editor from './pages/Editor';
+import Workspace from './pages/Workspace';
 import './index.css';
 
 function App() {
@@ -13,6 +14,7 @@ function App() {
         <Route path="/features" element={<Features />} />
         <Route path="/about" element={<About />} />
         <Route path="/editor" element={<Editor />} />
+        <Route path="/workspace" element={<Workspace />} />
       </Routes>
     </BrowserRouter>
   );
