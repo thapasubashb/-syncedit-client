@@ -321,7 +321,7 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
           onSelect={sendCursorPosition}
           onClick={sendCursorPosition}
           className="w-full min-h-[500px] p-8 font-sans text-base md:text-lg leading-relaxed text-slate-900 placeholder:text-slate-400 bg-transparent outline-none resize-none selection:bg-blue-100 selection:text-blue-900"
-          placeholder="Start typing your collaborative document here... All edits converge in real-time across peers with zero conflict."
+          placeholder="Start typing..."
           style={{ lineHeight: '1.85' }}
         />
 
@@ -341,7 +341,7 @@ const SimpleEditor: React.FC<EditorProps> = ({ clientId }) => {
       {/* ─── Bottom Telemetry & Info ─── */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-2 text-xs font-mono text-slate-500">
         <span>✓ Instant local IndexedDB persistence active</span>
-        <span>Peer-to-Peer WebRTC Mesh · Deterministic Ordering</span>
+        <span> WebRTC Mesh · Deterministic Ordering</span>
       </div>
     </div>
   );

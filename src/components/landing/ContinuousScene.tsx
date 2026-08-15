@@ -367,212 +367,119 @@ function Stage2PrismaticGlassHelix({ opacity }: { opacity: number }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function Stage3LiquidGlassParticleOrb({ opacity }: { opacity: number }) {
   const groupRef = useRef<THREE.Group>(null);
-  const outerGlassSphereRef = useRef<THREE.Mesh>(null);
-  const innerNucleusRef = useRef<THREE.Mesh>(null);
-  const glitterCloudRef = useRef<THREE.Points>(null);
-  const glitterRing1Ref = useRef<THREE.Points>(null);
-  const glitterRing2Ref = useRef<THREE.Points>(null);
+  const ringGroupRef = useRef<THREE.Group>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+  const sparkleRef = useRef<THREE.Points>(null);
 
-  // 1. Swirling High-Visibility Diamond Glitter Particles
-  const glitterCount = 3600;
-  const { glitterPositions, glitterColors, glitterPhases } = useMemo(() => {
-    const positions = new Float32Array(glitterCount * 3);
-    const colors = new Float32Array(glitterCount * 3);
-    const phases = new Float32Array(glitterCount * 3); // theta, phi, radius
+  const sparkleCount = 80;
+  const { sparklePositions, sparkleColors } = useMemo(() => {
+    const positions = new Float32Array(sparkleCount * 3);
+    const colors = new Float32Array(sparkleCount * 3);
+    const softCyan = new THREE.Color('#dff9ff');
+    const skyBlue = new THREE.Color('#9fe7ff');
 
-    const whiteGlitter = new THREE.Color('#ffffff');
-    const diamondSparkle = new THREE.Color('#f0fdfa');
-    const cyanDiamond = new THREE.Color('#a5f3fc');
-    const brightTeal = new THREE.Color('#67e8f9');
+    for (let i = 0; i < sparkleCount; i++) {
+      const theta = (i / sparkleCount) * Math.PI * 2;
+      const radius = 0.85 + (i % 5) * 0.18;
+      const y = (Math.random() - 0.5) * 0.8;
 
-    for (let i = 0; i < glitterCount; i++) {
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const r = 0.88 + Math.random() * 0.38;
+      positions[i * 3] = Math.cos(theta) * radius;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = Math.sin(theta) * radius;
 
-      phases[i * 3] = theta;
-      phases[i * 3 + 1] = phi;
-      phases[i * 3 + 2] = r;
-
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      positions[i * 3 + 2] = r * Math.cos(phi);
-
-      // Mostly pure sparkling white and bright diamond colors for high visibility
-      const col = i % 3 === 0 ? whiteGlitter : i % 3 === 1 ? diamondSparkle : (i % 6 === 2 ? cyanDiamond : brightTeal);
-      colors[i * 3] = col.r;
-      colors[i * 3 + 1] = col.g;
-      colors[i * 3 + 2] = col.b;
+      const color = i % 2 === 0 ? softCyan : skyBlue;
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
     }
 
-    return { glitterPositions: positions, glitterColors: colors, glitterPhases: phases };
-  }, []);
-
-  // 2. Concentric Orbiting White Glitter Ring Belts
-  const ring1Count = 600;
-  const ring1Positions = useMemo(() => {
-    const pos = new Float32Array(ring1Count * 3);
-    for (let i = 0; i < ring1Count; i++) {
-      const theta = (i / ring1Count) * Math.PI * 2;
-      const r = 1.22 + (Math.random() - 0.5) * 0.16;
-      pos[i * 3] = Math.cos(theta) * r;
-      pos[i * 3 + 1] = (Math.random() - 0.5) * 0.15;
-      pos[i * 3 + 2] = Math.sin(theta) * r;
-    }
-    return pos;
-  }, []);
-
-  const ring2Count = 500;
-  const ring2Positions = useMemo(() => {
-    const pos = new Float32Array(ring2Count * 3);
-    for (let i = 0; i < ring2Count; i++) {
-      const theta = (i / ring2Count) * Math.PI * 2;
-      const r = 1.38 + (Math.random() - 0.5) * 0.18;
-      pos[i * 3] = Math.cos(theta) * r;
-      pos[i * 3 + 1] = Math.sin(theta) * 0.35 + (Math.random() - 0.5) * 0.12;
-      pos[i * 3 + 2] = Math.sin(theta) * r;
-    }
-    return pos;
+    return { sparklePositions: positions, sparkleColors: colors };
   }, []);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
 
     if (groupRef.current) {
-      groupRef.current.rotation.y = t * 0.12;
-      groupRef.current.rotation.x = Math.sin(t * 0.15) * 0.08;
-      groupRef.current.position.y = Math.cos(t * 0.7) * 0.04;
-    }
-    if (outerGlassSphereRef.current) {
-      outerGlassSphereRef.current.rotation.y = -t * 0.25;
-      outerGlassSphereRef.current.rotation.x = t * 0.18;
-    }
-    if (innerNucleusRef.current) {
-      innerNucleusRef.current.rotation.y = t * 0.45;
-      const s = 0.42 + Math.sin(t * 2.5) * 0.04;
-      innerNucleusRef.current.scale.set(s, s, s);
+      groupRef.current.rotation.y = t * 0.16;
+      groupRef.current.rotation.x = Math.sin(t * 0.5) * 0.16;
+      groupRef.current.position.y = Math.sin(t * 0.7) * 0.05;
     }
 
-    // Dynamic Swirling Glitter Motion with Shimmer Twinkle
-    if (glitterCloudRef.current) {
-      const pos = glitterCloudRef.current.geometry.attributes.position;
-      const arr = pos.array as Float32Array;
-      for (let i = 0; i < glitterCount; i++) {
-        const baseTheta = glitterPhases[i * 3];
-        const basePhi = glitterPhases[i * 3 + 1];
-        const baseR = glitterPhases[i * 3 + 2];
-
-        // Smooth orbital rotation around circle
-        const theta = baseTheta + t * 0.45 + Math.sin(basePhi * 4 + t * 0.8) * 0.18;
-        // Subtle micro-twinkle sparkle breathing
-        const sparkle = Math.sin(i * 12.0 + t * 4.0) * 0.04;
-        const r = baseR + sparkle;
-
-        arr[i * 3] = r * Math.sin(basePhi) * Math.cos(theta);
-        arr[i * 3 + 1] = r * Math.sin(basePhi) * Math.sin(theta) + Math.cos(theta * 3 + t) * 0.05;
-        arr[i * 3 + 2] = r * Math.cos(basePhi);
-      }
-      pos.needsUpdate = true;
+    if (ringGroupRef.current) {
+      ringGroupRef.current.rotation.z = t * 0.2;
+      ringGroupRef.current.rotation.x = Math.PI / 2.3 + Math.sin(t * 0.5) * 0.15;
     }
 
-    // Rotating Glitter Belts
-    if (glitterRing1Ref.current) {
-      glitterRing1Ref.current.rotation.y = t * 0.55;
-      glitterRing1Ref.current.rotation.x = Math.PI / 8 + Math.sin(t * 0.3) * 0.1;
+    if (glowRef.current) {
+      glowRef.current.scale.set(1, 1, 1);
     }
-    if (glitterRing2Ref.current) {
-      glitterRing2Ref.current.rotation.y = -t * 0.45;
-      glitterRing2Ref.current.rotation.z = Math.PI / 6 + Math.cos(t * 0.25) * 0.1;
+
+    if (sparkleRef.current) {
+      sparkleRef.current.rotation.y = -t * 0.3;
+      sparkleRef.current.rotation.x = t * 0.15;
     }
   });
 
   return (
-    <group ref={groupRef} scale={opacity * 1.02} visible={opacity > 0.01}>
-      {/* Ambient Cyan-Aqua Atmospheric Backlight */}
-      <mesh position={[0, 0, -0.3]}>
-        <sphereGeometry args={[1.7, 32, 32]} />
-        <meshBasicMaterial color="#2dd4bf" transparent opacity={0.18 * opacity} />
+    <group ref={groupRef} scale={1} visible={opacity > 0.01}>
+      <mesh ref={glowRef} position={[0, 0, -0.6]}>
+        <sphereGeometry args={[1.85, 32, 32]} />
+        <meshBasicMaterial color="#9dd5ff" transparent opacity={0.12 * opacity} />
       </mesh>
 
-      {/* ─── 1. Pure Crystal Liquid Glass Outer Shell ─── */}
-      <mesh ref={outerGlassSphereRef}>
-        <sphereGeometry args={[0.78, 64, 64]} />
-        <meshPhysicalMaterial
-          color="#f0fdfa"
-          emissive="#2dd4bf"
-          emissiveIntensity={0.35 * opacity}
-          roughness={0.01}
-          metalness={0.02}
-          transmission={0.98}
-          thickness={2.8}
-          ior={1.56}
-          clearcoat={1.0}
-          clearcoatRoughness={0.0}
-          iridescence={0.95}
-          iridescenceIOR={1.4}
+      <group ref={ringGroupRef}>
+        {[0, 1, 2, 3].map((index) => (
+          <mesh
+            key={index}
+            rotation={[Math.PI / 2.6 + index * 0.22, 0.38 + index * 0.1, index * 0.4]}
+            position={[0, (index - 1.5) * 0.18, 0]}
+          >
+            <torusGeometry args={[1.02 - index * 0.14, 0.18 + index * 0.03, 28, 140]} />
+            <meshPhysicalMaterial
+              color="#d8f0ff"
+              emissive="#8ad9ff"
+              emissiveIntensity={0.8 * opacity}
+              roughness={0.08}
+              metalness={0.04}
+              transmission={0.97}
+              thickness={3.5}
+              ior={1.5}
+              clearcoat={1.0}
+              transparent
+              opacity={0.7 * opacity}
+            />
+          </mesh>
+        ))}
+
+        <mesh position={[0, 0, 0.2]}>
+          <sphereGeometry args={[0.52, 32, 32]} />
+          <meshPhysicalMaterial
+            color="#edfaff"
+            emissive="#a5f3fc"
+            emissiveIntensity={0.8 * opacity}
+            roughness={0.04}
+            metalness={0.05}
+            transmission={0.96}
+            thickness={2.5}
+            ior={1.48}
+            clearcoat={1.0}
+            transparent
+            opacity={0.22 * opacity}
+          />
+        </mesh>
+      </group>
+
+      <points ref={sparkleRef}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" count={sparkleCount} array={sparklePositions} itemSize={3} />
+          <bufferAttribute attach="attributes-color" count={sparkleCount} array={sparkleColors} itemSize={3} />
+        </bufferGeometry>
+        <pointsMaterial
+          size={0.04}
+          vertexColors
           transparent
-          opacity={0.96 * opacity}
-        />
-      </mesh>
-
-      {/* ─── 2. Internal Luminous Quantum Crystal Core ─── */}
-      <mesh ref={innerNucleusRef}>
-        <dodecahedronGeometry args={[0.4, 0]} />
-        <meshPhysicalMaterial
-          color="#ffffff"
-          emissive="#38bdf8"
-          emissiveIntensity={2.8 * opacity}
-          roughness={0.02}
-          metalness={0.1}
-          transmission={0.92}
-          thickness={1.4}
-          ior={1.52}
-          clearcoat={1.0}
-          transparent
-          opacity={0.94 * opacity}
-        />
-      </mesh>
-
-      {/* ─── 3. High-Visibility Sparkling White Glitter Cloud ─── */}
-      <points ref={glitterCloudRef}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" count={glitterCount} array={glitterPositions} itemSize={3} />
-          <bufferAttribute attach="attributes-color" count={glitterCount} array={glitterColors} itemSize={3} />
-        </bufferGeometry>
-        <pointsMaterial 
-          size={0.048} 
-          vertexColors 
-          transparent 
-          opacity={0.98 * opacity} 
-          sizeAttenuation 
-        />
-      </points>
-
-      {/* ─── 4. Orbiting White Glitter Ring Belt 1 ─── */}
-      <points ref={glitterRing1Ref}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" count={ring1Count} array={ring1Positions} itemSize={3} />
-        </bufferGeometry>
-        <pointsMaterial 
-          size={0.052} 
-          color="#ffffff" 
-          transparent 
-          opacity={0.95 * opacity} 
-          sizeAttenuation 
-        />
-      </points>
-
-      {/* ─── 5. Orbiting White Glitter Ring Belt 2 (Tilted) ─── */}
-      <points ref={glitterRing2Ref}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" count={ring2Count} array={ring2Positions} itemSize={3} />
-        </bufferGeometry>
-        <pointsMaterial 
-          size={0.048} 
-          color="#ffffff" 
-          transparent 
-          opacity={0.9 * opacity} 
-          sizeAttenuation 
+          opacity={0.5 * opacity}
+          sizeAttenuation
         />
       </points>
     </group>
@@ -790,21 +697,27 @@ function MasterContinuousSpatialScene({ scrollProgressRef }: { scrollProgressRef
     const progress = scrollProgressRef.current;
     const isMobile = viewport.width < 6;
 
+    const fade = (value: number, start: number, end: number) => {
+      if (value <= start) return 0;
+      if (value >= end) return 1;
+      return (value - start) / (end - start);
+    };
+
     if (progress <= 1) {
       op1.current = easeInOutCubic(1 - progress);
       op2.current = easeInOutCubic(progress);
       op3.current = 0;
       op4.current = 0;
-    } else if (progress <= 2) {
+    } else if (progress < 2) {
       op1.current = 0;
-      op2.current = easeInOutCubic(2 - progress);
-      op3.current = easeInOutCubic(progress - 1);
+      op2.current = easeInOutCubic(1 - fade(progress, 1, 2));
+      op3.current = easeInOutCubic(fade(progress, 1, 2));
       op4.current = 0;
-    } else if (progress <= 3) {
+    } else if (progress < 3) {
       op1.current = 0;
       op2.current = 0;
-      op3.current = easeInOutCubic(3 - progress);
-      op4.current = easeInOutCubic(progress - 2);
+      op3.current = easeInOutCubic(1 - fade(progress, 2, 3));
+      op4.current = easeInOutCubic(fade(progress, 2, 3));
     } else {
       op1.current = 0;
       op2.current = 0;
