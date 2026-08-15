@@ -62,11 +62,13 @@ export default function Home() {
   }, [location.state]);
 
   // ─── Continuous Easing Calculations for 4 Background Layers ───
+  const clamped = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
   const p = scrollProgress;
-  const op1 = Math.max(0, Math.min(1, 1 - p));
-  const op2 = Math.max(0, Math.min(1, 1 - Math.abs(p - 1)));
-  const op3 = Math.max(0, Math.min(1, 1 - Math.abs(p - 2)));
-  const op4 = Math.max(0, Math.min(1, p >= 2 ? p - 2 : 0));
+  const op1 = clamped(1 - p, 0, 1);
+  const op2 = clamped(1 - Math.abs(p - 1), 0, 1);
+  const op3 = clamped(1 - Math.abs(p - 2), 0, 1);
+  const op4 = clamped(p >= 2 ? p - 2 : 0, 0, 1);
 
   return (
     <div 
